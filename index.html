@@ -17,7 +17,7 @@
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 const ICON_MAP = {
   Shuffle: "🔀", RotateCcw: "🔄", Settings2: "⚙️", Plus: "➕", Trash2: "🗑️",
@@ -82,16 +82,81 @@ const STORY_DEFAULT = {
   },
 };
 
+const DEFAULT_TIMER = 180;
+
 const EMPTY_STATE = {
   activity: null, // 'star' | 'training'
   stage: "intro",
-  cellTarget: 6, timerConfig: 180, timerEndsAt: null, timerRunning: false,
+  cellTarget: 6, timerConfig: DEFAULT_TIMER, timerEndsAt: null, timerRunning: false,
   totalGroups: 6,
   storyText: { star: { intro: "", transition: "" }, training: { intro: "", transition1: "", transition2: "" } },
   cardId: null, cardRevealed: false, takenNumbers: {},
   ttol: { phase: "writing", profiles: {}, guesses: {} },
-  ts: 0,
 };
+
+/* takenNumbers 的格式是 { 小隊: { 情境號碼: 抽走它的玩家 id } }。
+   記名而不是只記號碼，才能判斷「這張是不是我抽的」——重整頁面後可以還原自己的號碼，
+   也才能在寫入後驗證自己的認領有沒有被別人蓋掉。舊格式是純號碼陣列，這裡一併相容。 */
+function normalizeTaken(taken) {
+  const out = {};
+  Object.keys(taken || {}).forEach((g) => {
+    const v = taken[g];
+    if (Array.isArray(v)) { out[g] = {}; v.forEach((n) => { out[g][n] = "?"; }); }
+    else if (v && typeof v === "object") { out[g] = { ...v }; }
+  });
+  return out;
+}
+
+/* 遠端讀回來的 state 一律補齊結構再用。少了這層，只要伺服器上那包 JSON 是舊版或不完整，
+   畫面就會在存取 storyText[activity] / ttol.profiles 時整頁拋錯。 */
+function normalizeState(raw) {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_STATE };
+  const story = raw.storyText || {};
+  const ttol = raw.ttol || {};
+  return {
+    ...EMPTY_STATE,
+    ...raw,
+    storyText: {
+      star: { ...EMPTY_STATE.storyText.star, ...(story.star || {}) },
+      training: { ...EMPTY_STATE.storyText.training, ...(story.training || {}) },
+    },
+    takenNumbers: normalizeTaken(raw.takenNumbers),
+    ttol: {
+      phase: ttol.phase === "guessing" ? "guessing" : "writing",
+      profiles: ttol.profiles || {},
+      guesses: ttol.guesses || {},
+    },
+  };
+}
+
+/* 玩家身分要能撐過重新整理，否則重整後會變成一個全新的人：情報要重填、
+   舊的那筆還會留在名單裡變成幽靈隊員，抽過的情境牌也會被允許再抽一次。 */
+function loadOrCreateId() {
+  const KEY = "pikmin.playerId";
+  const fresh = () => `p${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved) return saved;
+    const id = fresh();
+    localStorage.setItem(KEY, id);
+    return id;
+  } catch (e) { return fresh(); }
+}
+function loadGroup(room) {
+  try { const g = localStorage.getItem(`pikmin.group.${room}`); return g ? Number(g) : null; } catch (e) { return null; }
+}
+function saveGroup(room, group) {
+  try { localStorage.setItem(`pikmin.group.${room}`, String(group)); } catch (e) { /* 無痕模式等情況下略過 */ }
+}
+
+/* 記住「已經加入哪個房間」，手機鎖屏、切換 App 或不小心重整之後才不必重新輸入代碼。 */
+const SESSION_KEY = "pikmin.session";
+function loadSession() {
+  try { const raw = localStorage.getItem(SESSION_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.room ? s : null; } catch (e) { return null; }
+}
+function saveSession(session) {
+  try { session ? localStorage.setItem(SESSION_KEY, JSON.stringify(session)) : localStorage.removeItem(SESSION_KEY); } catch (e) { /* 略過 */ }
+}
 
 /* ---------- kvdb.io 同步 ---------- */
 const KV_ROOT = "https://kvdb.io";
@@ -139,6 +204,30 @@ async function kvSet(bucket, key, value) {
     const res = await fetch(`${KV_ROOT}/${bucket}/${key}`, { method: "PUT", body: JSON.stringify(value) });
     return res.ok;
   } catch (e) { return false; }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* kvdb 只有 GET / PUT，沒有原子操作，所以用「讀最新 → 套用自己的異動 → 寫回 → 讀回驗證」
+   的樂觀併發迴圈取代直接整包覆寫。mutator 收到的是遠端最新值，回傳 null 表示不需要寫入。
+   verify 用來確認自己的異動沒有被別人的寫入蓋掉，被蓋掉就重跑一次（會重新讀最新值）。 */
+async function kvMutate(bucket, key, mutator, { attempts = 5, verify, spread = 0 } = {}) {
+  // 整隊在同一秒按下按鈕時，先各自隨機錯開一點再開始，避免第一輪就全部撞在一起。
+  if (spread) await sleep(Math.floor(Math.random() * spread));
+  for (let i = 0; i < attempts; i++) {
+    const remote = await kvGet(bucket, key);
+    const next = mutator(remote);
+    if (next === null || next === undefined) return { ok: true, value: remote, skipped: true };
+    if (await kvSet(bucket, key, next)) {
+      if (!verify) return { ok: true, value: next };
+      const after = await kvGet(bucket, key);
+      if (after && verify(after)) return { ok: true, value: after };
+    }
+    /* 指數退避＋大幅隨機抖動。起始值要大於一次「讀→寫→驗證」的往返時間，
+       否則重試會落在別人的臨界區裡，一撞再撞。 */
+    if (i < attempts - 1) await sleep(Math.floor(Math.min(250 * Math.pow(1.6, i), 1500) * (0.5 + Math.random())));
+  }
+  // 重試用盡：絕對不要回傳自己那份沒寫進去的值，否則畫面會顯示成功、伺服器上卻沒有。
+  return { ok: false, value: null };
 }
 
 function formatTime(totalSeconds) {
@@ -366,7 +455,7 @@ function CellHostView({ state, pushState, activity }) {
     const rem = state.timerEndsAt ? Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000)) : state.timerConfig;
     pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: rem });
   }
-  function resetTimer() { pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: 180 }); }
+  function resetTimer() { pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: DEFAULT_TIMER }); }
 
   function handleFile(e) {
     const f = e.target.files && e.target.files[0];
@@ -474,7 +563,7 @@ function CellPlayerView({ state }) {
 }
 
 /* ---------- 偽裝洞穴 ---------- */
-function GroupProgress({ takenNumbers, totalGroups }) {
+function GroupProgress({ takenNumbers, totalGroups, poolSize }) {
   const groups = Array.from({ length: totalGroups }, (_, i) => i + 1);
   return (
     <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
@@ -483,10 +572,10 @@ function GroupProgress({ takenNumbers, totalGroups }) {
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {groups.map((g) => {
-          const count = (takenNumbers && takenNumbers[g] ? takenNumbers[g].length : 0);
+          const count = Object.keys((takenNumbers && takenNumbers[g]) || {}).length;
           return (
             <div key={g} className="text-xs px-3 py-1.5 rounded-lg text-center" style={{ background: "#EAF6FF", color: COLORS.creamDim, border: `1px solid ${COLORS.goldDim}` }}>
-              第 {g} 小隊　<span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{count}/8</span>
+              第 {g} 小隊　<span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{count}/{poolSize}</span>
             </div>
           );
         })}
@@ -497,15 +586,20 @@ function GroupProgress({ takenNumbers, totalGroups }) {
 
 function BarHostView({ cards, state, pushState, pushCards }) {
   const [mode, setMode] = useState("game");
+  const [flipping, setFlipping] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
+  const poolSize = currentCard ? currentCard.scenarios.length : 8;
 
-  function drawCard() {
+  /* 翻牌動畫是純視覺效果，用本地 flipping 做就好；原本為了動畫而連寫兩次遠端狀態，
+     等於多開一個會覆蓋玩家資料的時間窗。抽新卡本來就要清空該輪的認領，所以明確重置。 */
+  async function drawCard() {
     if (cards.length === 0) return;
     const pick = cards[Math.floor(Math.random() * cards.length)].id;
-    pushState({ ...state, cardId: pick, cardRevealed: false, takenNumbers: {} });
-    setTimeout(() => pushState({ ...state, cardId: pick, cardRevealed: true, takenNumbers: {}, ts: Date.now() }), 120);
+    setFlipping(true);
+    await pushState({ ...state, cardId: pick, cardRevealed: true, takenNumbers: {} }, { resetPlayerData: true });
+    setTimeout(() => setFlipping(false), 60);
   }
-  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {} }); }
+  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {} }, { resetPlayerData: true }); }
   function addCard() {
     const id = `c${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     pushCards([...cards, { id, line: "新的一句話", scenarios: Array(8).fill("") }]);
@@ -525,11 +619,11 @@ function BarHostView({ cards, state, pushState, pushCards }) {
       {mode === "game" ? (
         <>
           <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
-            抽出任務卡後會列出全部 8 種偽裝情境，交給皮克敏在自己的頁面抽情境牌。目前任務卡池共 {cards.length} 張：{cards.map((c) => c.line).join("、") || "（無）"}
+            抽出任務卡後會列出卡片上全部的偽裝情境，交給皮克敏在自己的頁面抽情境牌。目前任務卡池共 {cards.length} 張：{cards.map((c) => c.line).join("、") || "（無）"}
           </p>
 
           <div className="flex justify-center mb-6">
-            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed} accent={COLORS.cardEdge} small>
+            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed && !flipping} accent={COLORS.cardEdge} small>
               {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
             </FlipCard>
           </div>
@@ -545,12 +639,12 @@ function BarHostView({ cards, state, pushState, pushCards }) {
 
           {currentCard && (
             <div className="mb-8">
-              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 8 種，指揮官不會看到誰抽到哪個）</div>
+              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 {poolSize} 種，指揮官不會看到誰抽到哪個）</div>
               <SituationList scenarios={currentCard.scenarios} activeNumber={null} />
             </div>
           )}
 
-          <GroupProgress takenNumbers={state.takenNumbers} totalGroups={state.totalGroups} />
+          <GroupProgress takenNumbers={state.takenNumbers} totalGroups={state.totalGroups} poolSize={poolSize} />
         </>
       ) : (
         <div className="space-y-5">
@@ -581,27 +675,38 @@ function BarHostView({ cards, state, pushState, pushCards }) {
   );
 }
 
-function BarPlayerView({ cards, state, pushState, myGroup }) {
-  const [myNumber, setMyNumber] = useState(null);
-  const [myRevealed, setMyRevealed] = useState(false);
+function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
+  const [drawing, setDrawing] = useState(false);
   const [noneLeft, setNoneLeft] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [flipping, setFlipping] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
-  const groupKey = myGroup || "solo";
-  const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || [];
+  const groupKey = String(myGroup || "solo");
+  const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || {};
+  const poolSize = currentCard ? currentCard.scenarios.length : 0;
+
+  /* 自己的號碼是從共用狀態裡「哪一個號碼登記在我名下」推導出來的，不是本地暫存，
+     所以重新整理頁面之後仍然找得回來，也不會因此多抽走一個號碼。 */
+  const myNumber = useMemo(() => {
+    const hit = Object.keys(takenForGroup).find((n) => takenForGroup[n] === myId);
+    return hit ? Number(hit) : null;
+  }, [takenForGroup, myId]);
 
   useEffect(() => {
-    setMyNumber(null); setMyRevealed(false); setNoneLeft(false);
+    setNoneLeft(false); setFailed(false);
+    if (!state.cardId) return;
+    setFlipping(true);
+    const t = setTimeout(() => setFlipping(false), 80);
+    return () => clearTimeout(t);
   }, [state.cardId]);
 
   async function drawNumber() {
-    if (!currentCard || myNumber) return;
-    const available = [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => !takenForGroup.includes(n));
-    if (available.length === 0) { setNoneLeft(true); return; }
-    const pick = available[Math.floor(Math.random() * available.length)];
-    const nextTaken = { ...(state.takenNumbers || {}), [groupKey]: [...takenForGroup, pick] };
-    setMyRevealed(false);
-    await pushState({ ...state, takenNumbers: nextTaken });
-    setTimeout(() => { setMyNumber(pick); setMyRevealed(true); }, 120);
+    if (!currentCard || myNumber !== null || drawing) return;
+    setDrawing(true); setNoneLeft(false); setFailed(false);
+    const { full, failed: err } = await claimScenario(groupKey, poolSize);
+    setDrawing(false);
+    if (err) setFailed(true);
+    else if (full) setNoneLeft(true);
   }
 
   return (
@@ -616,24 +721,25 @@ function BarPlayerView({ cards, state, pushState, myGroup }) {
       </p>
 
       <div className="flex justify-center mb-6">
-        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed} accent={COLORS.cardEdge} small>
+        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed && !flipping} accent={COLORS.cardEdge} small>
           {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
         </FlipCard>
       </div>
 
       <div className="flex flex-col items-center gap-2 mb-8">
-        <button onClick={drawNumber} disabled={!currentCard || !!myNumber || noneLeft} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
-          <Icon name="Shuffle" size={16} /> {myNumber ? "已抽過（本輪只能抽一次）" : "抽情境牌"}
+        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+          <Icon name="Shuffle" size={16} /> {drawing ? "抽牌中…" : (myNumber !== null ? "已抽過（本輪只能抽一次）" : "抽情境牌")}
         </button>
         {!currentCard && <span className="text-xs" style={{ color: COLORS.creamDim }}>指揮官抽出任務卡後即可使用</span>}
-        {noneLeft && <span className="text-xs" style={{ color: COLORS.cardEdge }}>本小隊 8 種情境已經被抽完了</span>}
-        {myRevealed && <span className="text-3xl font-black mt-2" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
+        {noneLeft && <span className="text-xs" style={{ color: COLORS.cardEdge }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
+        {failed && <span className="text-xs" style={{ color: COLORS.cardEdge }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
+        {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
       </div>
 
       {currentCard && (
         <div>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 8 種，你的那項會反白，其他人看不到）</div>
-          <SituationList scenarios={currentCard.scenarios} activeNumber={myRevealed ? myNumber : null} />
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 {poolSize} 種，你的那項會反白，其他人看不到）</div>
+          <SituationList scenarios={currentCard.scenarios} activeNumber={myNumber} />
         </div>
       )}
     </>
@@ -716,8 +822,18 @@ function TtolWriteForm({ myGroup, onSubmit }) {
   const [nickname, setNickname] = useState("");
   const [statements, setStatements] = useState(["", "", "", ""]);
   const [lieIndex, setLieIndex] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const canSubmit = school && name && nickname && statements.every((s) => s.trim());
+  const canSubmit = school && name && nickname && statements.every((s) => s.trim()) && !sending;
+
+  async function send() {
+    if (!canSubmit) return;
+    setSending(true); setFailed(false);
+    const res = await onSubmit({ school, name, nickname, statements, lieIndex, group: myGroup });
+    setSending(false);
+    if (!res || !res.ok) setFailed(true);
+  }
 
   return (
     <div>
@@ -742,13 +858,14 @@ function TtolWriteForm({ myGroup, onSubmit }) {
           </div>
         ))}
       </div>
+      {failed && <div className="text-xs mb-3 text-center" style={{ color: COLORS.cardEdge }}>⚠ 沒有提交成功，請確認網路連線後再按一次。</div>}
       <button
-        onClick={() => onSubmit({ school, name, nickname, statements, lieIndex, group: myGroup })}
+        onClick={send}
         disabled={!canSubmit}
         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40"
         style={{ background: COLORS.gold, color: "#241A14" }}
       >
-        提交
+        {sending ? "提交中…" : "提交"}
       </button>
     </div>
   );
@@ -776,22 +893,22 @@ function TtolLivingRoom({ ttol, myGroup }) {
   );
 }
 
-function TtolGuessCard({ target, targetId, myId, ttol, pushState, state }) {
+function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
   const myGuess = (ttol.guesses && ttol.guesses[targetId] && ttol.guesses[targetId][myId]) || null;
   const [picked, setPicked] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
   const locked = myGuess && (myGuess.result === "correct" || myGuess.result === "wrong");
 
-  async function submitGuess() {
-    if (picked === null) return;
-    const attempts = myGuess ? myGuess.attempts : 0;
-    const isCorrect = picked === target.lieIndex;
-    const result = isCorrect ? "correct" : (attempts + 1 >= 2 ? "wrong" : "pending");
-    const nextGuesses = {
-      ...(ttol.guesses || {}),
-      [targetId]: { ...((ttol.guesses || {})[targetId] || {}), [myId]: { attempts: attempts + 1, result } },
-    };
-    await pushState({ ...state, ttol: { ...ttol, guesses: nextGuesses } });
-    setPicked(null);
+  /* 判讀的次數與結果都交給 submitGuess 依「遠端最新值」計算，
+     這裡不再自己算 attempts —— 全隊同時送出時，本地那份很可能已經過期。 */
+  async function send() {
+    if (picked === null || sending) return;
+    setSending(true); setFailed(false);
+    const res = await submitGuess(targetId, picked, target.lieIndex);
+    setSending(false);
+    if (res && res.ok) setPicked(null);
+    else setFailed(true);
   }
 
   return (
@@ -811,18 +928,19 @@ function TtolGuessCard({ target, targetId, myId, ttol, pushState, state }) {
         ))}
       </div>
       {!locked && (
-        <button onClick={submitGuess} disabled={picked === null} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
-          {myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀"}
+        <button onClick={send} disabled={picked === null || sending} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+          {sending ? "送出中…" : (myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀")}
         </button>
       )}
       {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.goldDim }}>✓ 判讀成功！</div>}
       {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.cardEdge }}>✕ 判讀失敗，兩次機會用完。</div>}
       {myGuess && myGuess.result === "pending" && <div className="text-center text-sm mt-2" style={{ color: COLORS.creamDim }}>還沒判讀成功，再試一次！</div>}
+      {failed && <div className="text-center text-xs mt-2" style={{ color: COLORS.cardEdge }}>⚠ 這次判讀沒有送出成功（不算次數），請再按一次送出。</div>}
     </div>
   );
 }
 
-function TtolGuessing({ ttol, myGroup, myId, pushState, state }) {
+function TtolGuessing({ ttol, myGroup, myId, submitGuess }) {
   const targets = Object.entries(ttol.profiles || {}).filter(([id, p]) => p.group === myGroup && id !== myId);
 
   return (
@@ -830,32 +948,28 @@ function TtolGuessing({ ttol, myGroup, myId, pushState, state }) {
       <p className="text-sm mb-4 text-center" style={{ color: COLORS.creamDim }}>背對背獨立作答，不能問提示——判讀同小隊每一位夥伴的哪一則情報是假的。你自己的不會出現在這裡。</p>
       {targets.length === 0 && <div className="text-center text-sm py-10" style={{ color: COLORS.creamDim }}>目前小隊內還沒有其他人可以判讀。</div>}
       {targets.map(([id, p]) => (
-        <TtolGuessCard key={id} target={p} targetId={id} myId={myId} ttol={ttol} pushState={pushState} state={state} />
+        <TtolGuessCard key={id} target={p} targetId={id} myId={myId} ttol={ttol} submitGuess={submitGuess} />
       ))}
     </div>
   );
 }
 
-function TtolPlayerView({ state, pushState, myGroup, myId }) {
+function TtolPlayerView({ state, submitProfile, submitGuess, myGroup, myId }) {
   const ttol = state.ttol || EMPTY_STATE.ttol;
-  const submitted = !!ttol.profiles[myId];
+  const submitted = !!(ttol.profiles || {})[myId];
 
-  async function handleSubmit(profile) {
-    const nextProfiles = { ...(ttol.profiles || {}), [myId]: profile };
-    await pushState({ ...state, ttol: { ...ttol, profiles: nextProfiles } });
-  }
-
-  if (!submitted) return <TtolWriteForm myGroup={myGroup} onSubmit={handleSubmit} />;
+  if (!submitted) return <TtolWriteForm myGroup={myGroup} onSubmit={submitProfile} />;
   if (ttol.phase === "writing") return <TtolLivingRoom ttol={ttol} myGroup={myGroup} />;
-  return <TtolGuessing ttol={ttol} myGroup={myGroup} myId={myId} pushState={pushState} state={state} />;
+  return <TtolGuessing ttol={ttol} myGroup={myGroup} myId={myId} submitGuess={submitGuess} />;
 }
 
 /* ---------- App ---------- */
 function App() {
-  const [role, setRole] = useState("host"); // host | player-join | player
+  const restored = useRef(loadSession()).current; // 上次已加入的房間（如果有）
+  const [role, setRole] = useState(restored ? "player" : "host"); // host | player-join | player
   const [room, setRoom] = useState(null);
-  const [roomReal, setRoomReal] = useState(null); // null=尚未確定, true=真的連上同步伺服器, false=連不上（房間代碼無法給人加入）
-  const [joinedRoom, setJoinedRoom] = useState(null);
+  const [roomReal, setRoomReal] = useState(restored ? true : null); // null=尚未確定, true=真的連上同步伺服器, false=連不上（房間代碼無法給人加入）
+  const [joinedRoom, setJoinedRoom] = useState(restored ? restored.room : null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState("");
 
@@ -865,10 +979,29 @@ function App() {
   const [syncOk, setSyncOk] = useState(null);
   const [myGroup, setMyGroup] = useState(null);
   const [editingStory, setEditingStory] = useState(false);
-  const pollRef = useRef(null);
-  const myIdRef = useRef(`p${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const myIdRef = useRef(loadOrCreateId());
 
   const activeRoom = role === "player" ? joinedRoom : room;
+  // roomReal === false 代表連不上 kvdb（單機測試模式），這時完全不要發網路請求。
+  const syncEnabled = !!activeRoom && roomReal !== false;
+
+  /* 讓非同步的寫入流程隨時拿得到最新的本地 state，不必把它放進 useCallback 的相依陣列。 */
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  /* 寫入進行中（以及寫完後的短暫沉澱期）不要套用輪詢結果，
+     否則自己剛送出的異動會被一個較早發出、還在路上的輪詢回應蓋回舊值。 */
+  const writingRef = useRef(0);
+  const settleUntilRef = useRef(0);
+  const repairingRef = useRef(false);
+  /* 連續操作時會有多個寫入同時在路上。較早發出、較晚回來的那個若把結果套回畫面，
+     就會把使用者已經前進的關卡拉回去。只有最新一次寫入有資格更新畫面。 */
+  const writeSeqRef = useRef(0);
+  const beginWrite = useCallback(() => { writingRef.current += 1; }, []);
+  const endWrite = useCallback(() => {
+    writingRef.current = Math.max(0, writingRef.current - 1);
+    settleUntilRef.current = Date.now() + 800;
+  }, []);
 
   useEffect(() => {
     if (role !== "host" || room) return;
@@ -879,47 +1012,208 @@ function App() {
     })();
   }, [role, room]);
 
-  const pushState = useCallback(async (next) => {
+  /* 指揮官端的寫入：只負責流程狀態（活動、關卡、計時器、任務卡、故事文字）。
+     takenNumbers 與 ttol.profiles / ttol.guesses 是玩家寫的，寫回去時一律以遠端最新值為準，
+     否則指揮官那份過期快照會把大家剛填好的資料整包抹掉。
+     只有明確要清空該輪資料的動作（抽新任務卡、重置、換活動）才傳 resetPlayerData。 */
+  const pushState = useCallback(async (next, opts = {}) => {
     setState(next);
-    if (!activeRoom) return false;
-    const ok = await kvSet(activeRoom, "state", next);
-    setSyncOk(ok);
-    return ok;
-  }, [activeRoom]);
+    if (!syncEnabled) return false;
+    const seq = ++writeSeqRef.current;
+    beginWrite();
+    const res = await kvMutate(activeRoom, "state", (remote) => {
+      if (!remote || opts.resetPlayerData) return next;
+      const base = normalizeState(remote);
+      return {
+        ...next,
+        takenNumbers: base.takenNumbers,
+        ttol: { ...(next.ttol || EMPTY_STATE.ttol), profiles: base.ttol.profiles, guesses: base.ttol.guesses },
+      };
+    });
+    endWrite();
+    setSyncOk(res.ok);
+    if (res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
+    return res.ok;
+  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+
   const pushCards = useCallback(async (next) => {
     setCards(next);
-    if (!activeRoom) return false;
+    if (!syncEnabled) return false;
+    beginWrite();
     const ok = await kvSet(activeRoom, "cards", next);
+    endWrite();
     setSyncOk(ok);
     return ok;
-  }, [activeRoom]);
+  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+
+  /* 玩家端的寫入：mutator 只能改自己那一筆，其餘欄位原封不動沿用遠端最新值。
+     verify 負責確認寫入沒有被同時送出的其他人蓋掉，被蓋掉就重讀重試。 */
+  const mutatePlayerData = useCallback(async (mutator, verify) => {
+    if (!syncEnabled) {
+      const local = mutator(normalizeState(stateRef.current));
+      if (local) setState(local);
+      return { ok: true, value: local || stateRef.current, local: true };
+    }
+    const seq = ++writeSeqRef.current;
+    beginWrite();
+    const res = await kvMutate(activeRoom, "state", (remote) => mutator(normalizeState(remote || stateRef.current)), { verify, spread: 300 });
+    endWrite();
+    setSyncOk(res.ok);
+    // 只有確認寫入成功才更新畫面。失敗時維持原狀並回報，讓使用者知道要再按一次，
+    // 而不是看到一個伺服器上根本不存在的結果。
+    if (res.ok && res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
+    return res;
+  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+
+  /* 我這台裝置送出過的東西。寫入成功「當下」不代表就安全了——另一個讀取時間較早的人
+     隨後把整包狀態寫回去，一樣會把我的資料蓋掉。所以每次輪詢都拿這份記錄跟遠端對照，
+     發現自己的東西不見了就補寫回去。這讓整個同步變成會自我修復、最終一致。 */
+  const myDataRef = useRef({ profile: null, guesses: {}, claim: null });
+
+  const repairPatch = useCallback((base) => {
+    const mine = myDataRef.current;
+    const myId = myIdRef.current;
+    let next = base, changed = false;
+    /* 指揮官換活動時會清空全部資料；那不是「被蓋掉」，不能補寫回去，否則重置會被玩家撤銷。
+       情報與判讀也只在情報交換那一關才需要維護。 */
+    if (!base.activity) { myDataRef.current = { profile: null, guesses: {}, claim: null }; return null; }
+    const inTtol = base.stage === "ttol";
+    if (inTtol && mine.profile && !base.ttol.profiles[myId]) {
+      next = { ...next, ttol: { ...next.ttol, profiles: { ...next.ttol.profiles, [myId]: mine.profile } } };
+      changed = true;
+    }
+    Object.keys(inTtol ? mine.guesses : {}).forEach((targetId) => {
+      const want = mine.guesses[targetId];
+      const have = (next.ttol.guesses[targetId] || {})[myId];
+      if (!have || have.attempts < want.attempts) {
+        next = { ...next, ttol: { ...next.ttol, guesses: { ...next.ttol.guesses, [targetId]: { ...(next.ttol.guesses[targetId] || {}), [myId]: want } } } };
+        changed = true;
+      }
+    });
+    if (mine.claim && base.cardId === mine.claim.cardId) {
+      const taken = next.takenNumbers[mine.claim.group] || {};
+      if (taken[mine.claim.number] === undefined) {
+        next = { ...next, takenNumbers: { ...next.takenNumbers, [mine.claim.group]: { ...taken, [mine.claim.number]: myId } } };
+        changed = true;
+      } else if (taken[mine.claim.number] !== myId) {
+        mine.claim = null; // 號碼已經被別人拿走，不能硬塞成兩人同號，讓畫面回到可重抽的狀態
+      }
+    } else if (mine.claim && base.cardId !== mine.claim.cardId) {
+      mine.claim = null; // 已經換了新的一輪任務卡
+    }
+    return changed ? next : null;
+  }, []);
+
+  /* 認領一張情境牌。每次重試都會依最新的遠端資料重新挑號碼，所以不會挑到別人剛拿走的。 */
+  const claimScenario = useCallback(async (groupKey, poolSize) => {
+    const myId = myIdRef.current;
+    let picked = null, full = false;
+    const res = await mutatePlayerData(
+      (base) => {
+        const taken = base.takenNumbers[groupKey] || {};
+        const mine = Object.keys(taken).find((n) => taken[n] === myId);
+        if (mine) { picked = Number(mine); full = false; return null; } // 已經抽過，不重複寫入
+        const available = [];
+        for (let n = 1; n <= poolSize; n++) if (taken[n] === undefined) available.push(n);
+        if (available.length === 0) { picked = null; full = true; return null; }
+        full = false;
+        picked = available[Math.floor(Math.random() * available.length)];
+        return { ...base, takenNumbers: { ...base.takenNumbers, [groupKey]: { ...taken, [picked]: myId } } };
+      },
+      (after) => picked !== null && ((normalizeState(after).takenNumbers[groupKey] || {})[picked] === myId)
+    );
+    if (!res.ok) return { picked: null, full: false, failed: true };
+    if (picked !== null) myDataRef.current.claim = { cardId: stateRef.current.cardId, group: groupKey, number: picked };
+    return { picked, full, failed: false };
+  }, [mutatePlayerData]);
+
+  const submitProfile = useCallback(async (profile) => {
+    const myId = myIdRef.current;
+    const res = await mutatePlayerData(
+      (base) => ({ ...base, ttol: { ...base.ttol, profiles: { ...base.ttol.profiles, [myId]: profile } } }),
+      (after) => !!(normalizeState(after).ttol.profiles[myId])
+    );
+    if (res.ok) myDataRef.current.profile = profile;
+    return res;
+  }, [mutatePlayerData]);
+
+  const submitGuess = useCallback(async (targetId, pickedIndex, lieIndex) => {
+    const myId = myIdRef.current;
+    let attempts = 0, recorded = null;
+    const res = await mutatePlayerData(
+      (base) => {
+        const forTarget = base.ttol.guesses[targetId] || {};
+        const prev = forTarget[myId] || null;
+        if (prev && (prev.result === "correct" || prev.result === "wrong")) return null; // 兩次機會已用完
+        attempts = (prev ? prev.attempts : 0) + 1;
+        const result = pickedIndex === lieIndex ? "correct" : (attempts >= 2 ? "wrong" : "pending");
+        recorded = { attempts, result };
+        return {
+          ...base,
+          ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [targetId]: { ...forTarget, [myId]: recorded } } },
+        };
+      },
+      (after) => {
+        const mine = (normalizeState(after).ttol.guesses[targetId] || {})[myId];
+        return !!mine && mine.attempts >= attempts;
+      }
+    );
+    if (res.ok && recorded) myDataRef.current.guesses[targetId] = recorded;
+    return res;
+  }, [mutatePlayerData]);
 
   useEffect(() => {
     if (!activeRoom) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const remoteCards = await kvGet(activeRoom, "cards");
-      const remoteState = await kvGet(activeRoom, "state");
+      if (syncEnabled) {
+        const remoteCards = await kvGet(activeRoom, "cards");
+        const remoteState = await kvGet(activeRoom, "state");
+        if (cancelled) return;
+        if (remoteCards) setCards(remoteCards);
+        if (remoteState) setState(normalizeState(remoteState));
+      }
       if (cancelled) return;
-      if (remoteCards) setCards(remoteCards);
-      if (remoteState) setState(remoteState);
+      setMyGroup(loadGroup(activeRoom));
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [activeRoom]);
+  }, [activeRoom, syncEnabled]);
 
+  /* 指揮官同樣要輪詢：他的「已提交名單」與「抽取進度」讀的都是玩家寫進來的資料，
+     不重新拉取的話那兩塊永遠是空的，而且他手上的過期快照一寫回去就會清掉玩家的成果。 */
   useEffect(() => {
-    if (role !== "player" || !activeRoom) return;
-    pollRef.current = setInterval(async () => {
-      const remoteCards = await kvGet(activeRoom, "cards");
+    if (!syncEnabled) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) return;
       const remoteState = await kvGet(activeRoom, "state");
+      if (cancelled) return;
+      // 任務卡只有指揮官會改，所以他不需要拉回來（拉回來反而會蓋掉正在編輯的文字）；
+      // 玩家也只有在偽裝洞穴那關才用得到，其餘時間不必浪費請求。
+      let remoteCards = null;
+      if (role === "player" && remoteState && remoteState.stage === "bar") {
+        remoteCards = await kvGet(activeRoom, "cards");
+        if (cancelled) return;
+      }
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) return;
       if (remoteCards) setCards(remoteCards);
-      if (remoteState) setState(remoteState);
-      setSyncOk(remoteCards !== null || remoteState !== null);
-    }, 1500);
-    return () => clearInterval(pollRef.current);
-  }, [role, activeRoom]);
+      if (remoteState) {
+        const base = normalizeState(remoteState);
+        // 自己送出過、但遠端已經看不到的東西，就地補回來（畫面先顯示，背景再寫回伺服器）。
+        const patched = role === "player" ? repairPatch(base) : null;
+        setState(patched || base);
+        if (patched && !repairingRef.current) {
+          repairingRef.current = true;
+          mutatePlayerData((b) => repairPatch(b)).finally(() => { repairingRef.current = false; });
+        }
+      }
+      setSyncOk(remoteState !== null);
+    };
+    const id = setInterval(tick, role === "player" ? 1500 : 2500);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData]);
 
   async function handleJoin(code) {
     setJoining(true); setJoinError("");
@@ -936,11 +1230,14 @@ function App() {
       return;
     }
     setJoining(false);
+    setRoomReal(true); // 能讀到房間資料，代表同步伺服器是通的
     setJoinedRoom(code);
     setRole("player");
+    saveSession({ room: code });
   }
   function enterTestPlayer() { setJoinedRoom(room); setRole("player"); }
-  function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); }
+  function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); saveSession(null); }
+  function chooseGroup(n) { setMyGroup(n); if (activeRoom) saveGroup(activeRoom, n); }
 
   if (role === "player-join") return <PlayerJoinScreen onJoin={handleJoin} joining={joining} error={joinError} />;
 
@@ -982,7 +1279,7 @@ function App() {
             )}
             {role === "host" && activity && !editingStory && (
               <button
-                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol })}
+                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
                 style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}
               >
@@ -1053,12 +1350,12 @@ function App() {
             )}
 
             {state.stage === "ttol" && role === "host" && <TtolHostView state={state} pushState={pushState} />}
-            {state.stage === "ttol" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={setMyGroup} />}
-            {state.stage === "ttol" && role === "player" && !mustPickGroup && <TtolPlayerView state={state} pushState={pushState} myGroup={myGroup} myId={myIdRef.current} />}
+            {state.stage === "ttol" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={chooseGroup} />}
+            {state.stage === "ttol" && role === "player" && !mustPickGroup && <TtolPlayerView state={state} submitProfile={submitProfile} submitGuess={submitGuess} myGroup={myGroup} myId={myIdRef.current} />}
 
             {state.stage === "bar" && role === "host" && <BarHostView cards={cards} state={state} pushState={pushState} pushCards={pushCards} />}
-            {state.stage === "bar" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={setMyGroup} />}
-            {state.stage === "bar" && role === "player" && !mustPickGroup && <BarPlayerView cards={cards} state={state} pushState={pushState} myGroup={myGroup} />}
+            {state.stage === "bar" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={chooseGroup} />}
+            {state.stage === "bar" && role === "player" && !mustPickGroup && <BarPlayerView cards={cards} state={state} claimScenario={claimScenario} myGroup={myGroup} myId={myIdRef.current} />}
           </>
         )}
       </div>
