@@ -41,7 +41,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.click("text=大家自我介紹完了，開始情報判讀");
   await host.waitForTimeout(4000);
 
-  const stored = world.store.read(code, "state");
+  const stored = (await world.db.room(code));
   const names = Object.values((stored.ttol && stored.ttol.profiles) || {}).map((p) => p.nickname);
   ok(names.length === 2, `按下「開始情報判讀」後，伺服器上仍有 ${names.length} 份情報：${JSON.stringify(names)}`);
 

@@ -1,9 +1,13 @@
 # 回歸測試
 
 用 Playwright 實際開多個瀏覽器分頁跑遊戲：每個參與者一個獨立的 browser context
-（各自的 localStorage，等同不同裝置），CDN 換成本地檔案，`kvdb.io` 換成共用的記憶體版
-並模擬網路延遲。這樣才測得出「大家同時操作」時的行為——沒有延遲的話競態窗口小到
-測不出來，多人覆蓋的問題會測不到。
+（各自的 localStorage，等同不同裝置），CDN 換成本地檔案。
+
+資料庫用的是**官方的 Firebase Realtime Database 模擬器**（`firebase-tools` 下載的 jar，
+由 `tools/emulator.js` 直接以 java 啟動——繞過 CLI，因為它啟動時會去抓遠端設定）。
+不是自己寫的假伺服器，所以 `PATCH` 合併、`ETag` 條件寫入、SSE 推播的語意都與正式環境一致。
+
+資料庫請求會加上模擬延遲，否則競態窗口小到測不出來，多人覆蓋的問題會測不到。
 
 ## 執行
 
@@ -29,12 +33,12 @@ node tests/test-ttol.js
 | `test-stress.js` | 六人同時提交情報、同時送出判讀，全部落地 |
 | `test-timing.js` | 量測六人同時提交各自要多久才真的寫入伺服器 |
 | `test-order.js` | 指揮官快速連續切換關卡時，抵達伺服器的順序等於操作順序 |
-| `test-offline.js` | 完全連不上 kvdb 時仍可用單機模式，且不對死掉的伺服器空轉 |
+| `test-offline.js` | 尚未設定後端、以及設定了但連不上時，仍可用單機模式且不空轉 |
 | `test-reset.js` | 指揮官重置後，玩家的自我修復不會把舊資料寫回去 |
 | `test-misc.js` | 故事編輯器、倒數計時器、集合人數的跨裝置同步 |
 | `test-stage-a.js` | 房間代碼常駐、回上一關、編輯去抖動、空白情境不入抽牌池 |
 | `test-clock.js` | 兩台裝置系統時鐘差 5 分鐘時，倒數仍然一致 |
-| `test-perf.js` | 輪詢請求量、切到背景時暫停、變動後恢復靈敏的延遲 |
+| `test-perf.js` | 靜置時的請求量、切到背景的行為、變動後的同步延遲 |
 | `test-resilience.js` | CDN 掛掉的提示、錯誤邊界、預先編譯版的載入速度 |
 | `test-secrecy.js` | 假情報答案不上傳，判定由本人的裝置完成 |
 | `test-tamper.js` | 房間資料被清空時，指揮官自動從本機備份還原 |

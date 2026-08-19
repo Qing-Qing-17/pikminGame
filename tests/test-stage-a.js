@@ -31,14 +31,14 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.waitForSelector('input[placeholder="皮克敏要喊出的暗號"]');
   // 只留一張任務卡，抽卡結果才是確定的
   while ((await host.locator('input[placeholder="皮克敏要喊出的暗號"]').count()) > 1) {
-    await host.locator('button:has(span)').filter({ hasText: "🗑️" }).last().click();
-    await host.waitForTimeout(300);
+    await host.locator('button').filter({ hasText: "🗑️" }).last().click();
+    await host.waitForTimeout(1200);
   }
-  const putsBefore = world.store.stats.putByKey.cards || 0;
+  const putsBefore = world.stats.writesByKey.cards || 0;
   await host.locator('input[placeholder="皮克敏要喊出的暗號"]').first().fill("");
   await host.locator('input[placeholder="皮克敏要喊出的暗號"]').first().pressSequentially("快跑啊快跑", { delay: 60 });
   await host.waitForTimeout(2500);
-  const puts = (world.store.stats.putByKey.cards || 0) - putsBefore;
+  const puts = (world.stats.writesByKey.cards || 0) - putsBefore;
   ok(puts <= 3, `輸入 5 個字只產生 ${puts} 次寫入（未去抖動時每個字一次）`);
 
   // A3: 清空一則情境後，它不應該再被抽到

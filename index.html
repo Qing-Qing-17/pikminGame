@@ -221,15 +221,37 @@ function saveSession(session) {
   try { session ? localStorage.setItem(SESSION_KEY, JSON.stringify(session)) : localStorage.removeItem(SESSION_KEY); } catch (e) { /* 略過 */ }
 }
 
-/* ---------- kvdb.io 同步 ---------- */
-const KV_ROOT = "https://kvdb.io";
+/* ---------- Firebase Realtime Database（REST + SSE） ----------
 
-/* 倒數是用「結束時刻」在各裝置本地換算的，所以每支手機的系統時鐘一有偏差，看到的剩餘
-   秒數就會不一樣（差幾分鐘的手機並不罕見）。kvdb 回應的 Date 標頭不在 CORS 安全清單內、
-   跨網域讀不到，所以改以指揮官的時鐘為共同基準：指揮官每次寫入都蓋上自己的時戳，
-   玩家用它推算偏移量。取樣一定會低估——狀態是先被寫入、隔一個輪詢週期才被讀到——
-   所以取歷次觀察到的最大值最接近真值，誤差因此收斂到一個輪詢週期以內，
-   而不是取決於手機時鐘差多少。 */
+   前一版把整包狀態塞進一個公開鍵值儲存（kvdb.io，已停止服務），沒有原子操作，
+   所以得靠「讀取－合併－寫入－驗證－重試」加自我修復硬撐併發。改用 RTDB 之後
+   這些補丁都不需要了：
+
+   - PATCH 只合併指定欄位，兩個人寫不同路徑不可能互相覆蓋。
+   - 每位玩家只寫自己的路徑（profiles/<我>、guesses/<對象>/<我>），零競爭。
+   - 搶情境牌用 ETag 條件寫入（if-match），第二個人會收到 412，是真正的原子認領。
+   - 用 SSE 即時推播取代輪詢。
+
+   房間樹的結構：
+     rooms/<代碼>/session   指揮官擁有的流程狀態
+     rooms/<代碼>/cards     任務卡
+     rooms/<代碼>/taken/<小隊>/<號碼>      = 認領者的玩家 id
+     rooms/<代碼>/profiles/<玩家 id>        = 情報（不含答案）
+     rooms/<代碼>/guesses/<對象>/<判讀者>   = { attempts, pick, result }
+*/
+
+/* ↓↓↓ 把 Firebase 的 Realtime Database 網址貼在這裡 ↓↓↓
+   長得像 https://專案名-default-rtdb.asia-southeast1.firebasedatabase.app
+   用 REST 不需要 API key，只要這一個網址。留空的話會進入單機模式。 */
+const FIREBASE_DB_URL = "";
+/* ↑↑↑ 取得方式見 README 的〈設定 Firebase〉 ↑↑↑ */
+
+function dbConfigured() { return /^https?:\/\//.test(String(FIREBASE_DB_URL || "")); }
+
+/* 倒數是用「結束時刻」在各裝置本地換算的，每支手機的系統時鐘一有偏差，看到的剩餘秒數
+   就不一樣（差幾分鐘的手機並不罕見）。以指揮官的時鐘為共同基準：他每次寫入都蓋上時戳，
+   玩家用它推算偏移量。取樣一定低估——狀態是先被寫入、稍後才推播到玩家——所以取歷次
+   觀察到的最大值最接近真值。 */
 let hostClockOffset = 0;
 let haveHostSample = false;
 let lastHostStamp = 0;
@@ -240,79 +262,157 @@ function noteHostTime(stamp) {
   if (!haveHostSample || candidate > hostClockOffset) { hostClockOffset = candidate; haveHostSample = true; }
 }
 function now() { return Date.now() + hostClockOffset; }
-async function createBucket(attempts = 3) {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(`${KV_ROOT}/`, { method: "POST" });
-      if (res.ok) {
-        const id = (await res.text()).trim();
-        if (id) return id;
-      }
-    } catch (e) {
-      // retry
-    }
-    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400));
-  }
-  return null;
-}
-async function probeReachable() {
-  try {
-    await fetch(`${KV_ROOT}/`, { method: "HEAD" });
-    return true;
-  } catch (e) {
-    return false;
-  }
+
+/* 網址可能自帶查詢字串（測試用的本地模擬器需要 ?ns=），所以要保留它 */
+function dbUrl(path, extraQuery) {
+  const raw = String(FIREBASE_DB_URL || "");
+  const q = raw.indexOf("?");
+  const origin = (q >= 0 ? raw.slice(0, q) : raw).replace(/\/+$/, "");
+  const carried = q >= 0 ? raw.slice(q + 1) : "";
+  const qs = [carried, extraQuery].filter(Boolean).join("&");
+  return `${origin}/${path}.json${qs ? "?" + qs : ""}`;
 }
 
-/* 回傳 { status, value }：'ok' 讀到了、'missing' 伺服器明確說沒有、'error' 讀不到。
-   要分辨後兩者，才能在房間資料真的被清空時還原，而不會因為一次連線失敗就誤判。 */
-async function kvRead(bucket, key, attempts = 3) {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(`${KV_ROOT}/${bucket}/${key}`);
-      if (res.status === 404) return { status: "missing", value: null };
-      if (!res.ok) throw new Error("bad status");
-      const text = await res.text();
-      return { status: "ok", value: text ? JSON.parse(text) : null };
-    } catch (e) {
-      if (i === attempts - 1) return { status: "error", value: null };
-      await new Promise((r) => setTimeout(r, 300));
-    }
+/* Firebase 會把鍵值為連續整數的物件回成陣列（中間沒有的位置是 null）。
+   我們的小隊與情境號碼都是數字，所以每次讀取都要正規化回物件。 */
+function fbMap(v) {
+  if (v === null || v === undefined) return {};
+  if (Array.isArray(v)) {
+    const out = {};
+    v.forEach((item, i) => { if (item !== null && item !== undefined) out[String(i)] = item; });
+    return out;
   }
-  return { status: "error", value: null };
+  return typeof v === "object" ? v : {};
 }
-async function kvGet(bucket, key, attempts = 3) {
-  return (await kvRead(bucket, key, attempts)).value;
-}
-async function kvSet(bucket, key, value) {
+
+async function dbGet(path) {
+  if (!dbConfigured()) return { status: "error", value: null };
   try {
-    const res = await fetch(`${KV_ROOT}/${bucket}/${key}`, { method: "PUT", body: JSON.stringify(value) });
+    const res = await fetch(dbUrl(path));
+    if (!res.ok) return { status: "error", value: null };
+    const value = await res.json();
+    return { status: value === null ? "missing" : "ok", value };
+  } catch (e) { return { status: "error", value: null }; }
+}
+
+async function dbPut(path, value) {
+  if (!dbConfigured()) return false;
+  try {
+    const res = await fetch(dbUrl(path), {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(value),
+    });
     return res.ok;
   } catch (e) { return false; }
 }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/* kvdb 只有 GET / PUT，沒有原子操作，所以用「讀最新 → 套用自己的異動 → 寫回 → 讀回驗證」
-   的樂觀併發迴圈取代直接整包覆寫。mutator 收到的是遠端最新值，回傳 null 表示不需要寫入。
-   verify 用來確認自己的異動沒有被別人的寫入蓋掉，被蓋掉就重跑一次（會重新讀最新值）。 */
-async function kvMutate(bucket, key, mutator, { attempts = 5, verify, spread = 0 } = {}) {
-  // 整隊在同一秒按下按鈕時，先各自隨機錯開一點再開始，避免第一輪就全部撞在一起。
-  if (spread) await sleep(Math.floor(Math.random() * spread));
-  for (let i = 0; i < attempts; i++) {
-    const remote = await kvGet(bucket, key);
-    const next = mutator(remote);
-    if (next === null || next === undefined) return { ok: true, value: remote, skipped: true };
-    if (await kvSet(bucket, key, next)) {
-      if (!verify) return { ok: true, value: next };
-      const after = await kvGet(bucket, key);
-      if (after && verify(after)) return { ok: true, value: after };
-    }
-    /* 指數退避＋大幅隨機抖動。起始值要大於一次「讀→寫→驗證」的往返時間，
-       否則重試會落在別人的臨界區裡，一撞再撞。 */
-    if (i < attempts - 1) await sleep(Math.floor(Math.min(250 * Math.pow(1.6, i), 1500) * (0.5 + Math.random())));
+/* 只更新傳進來的欄位，其餘原封不動——這是取代整包覆寫的關鍵 */
+async function dbPatch(path, obj) {
+  if (!dbConfigured()) return false;
+  try {
+    const res = await fetch(dbUrl(path), {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(obj),
+    });
+    return res.ok;
+  } catch (e) { return false; }
+}
+
+/* 原子認領：只有在該位置目前是空的時候才寫得進去。
+   先取得 ETag，再用 if-match 寫入；別人搶先一步時伺服器回 412。 */
+async function dbClaim(path, value) {
+  if (!dbConfigured()) return "error";
+  try {
+    const head = await fetch(dbUrl(path), { headers: { "X-Firebase-ETag": "true" } });
+    if (!head.ok) return "error";
+    const etag = head.headers.get("etag");
+    const current = await head.json();
+    if (current !== null && current !== undefined) return current === value ? "won" : "taken";
+    if (!etag) return "error"; // 讀不到 ETag 就不能保證原子性，交給呼叫端重試
+    const res = await fetch(dbUrl(path), {
+      method: "PUT",
+      headers: { "content-type": "application/json", "if-match": etag },
+      body: JSON.stringify(value),
+    });
+    if (res.status === 412) return "taken";
+    return res.ok ? "won" : "error";
+  } catch (e) { return "error"; }
+}
+
+/* 即時訂閱一整棵子樹。Firebase 以 SSE 推送 put（整段取代）與 patch（部分合併），
+   我們在本地維護一份鏡像，每次變動就把整棵樹交給呼叫端。 */
+function setIn(tree, path, data) {
+  const parts = String(path || "/").split("/").filter(Boolean);
+  if (parts.length === 0) return data;
+  const root = (tree && typeof tree === "object") ? (Array.isArray(tree) ? [...tree] : { ...tree }) : {};
+  let node = root;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const k = parts[i];
+    const child = node[k];
+    node[k] = (child && typeof child === "object") ? (Array.isArray(child) ? [...child] : { ...child }) : {};
+    node = node[k];
   }
-  // 重試用盡：絕對不要回傳自己那份沒寫進去的值，否則畫面會顯示成功、伺服器上卻沒有。
-  return { ok: false, value: null };
+  const last = parts[parts.length - 1];
+  if (data === null || data === undefined) delete node[last];
+  else node[last] = data;
+  return root;
+}
+
+function dbStream(path, onTree, onError) {
+  if (!dbConfigured() || typeof EventSource === "undefined") return () => {};
+  let tree = null;
+  let closed = false;
+  const es = new EventSource(dbUrl(path));
+
+  const handle = (isPatch) => (ev) => {
+    if (closed) return;
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (!msg) return;
+    if (isPatch) {
+      // patch 的 data 是「這個路徑底下要合併的鍵值」
+      Object.keys(msg.data || {}).forEach((k) => {
+        tree = setIn(tree, `${msg.path === "/" ? "" : msg.path}/${k}`, msg.data[k]);
+      });
+    } else {
+      tree = setIn(tree, msg.path, msg.data);
+    }
+    onTree(tree);
+  };
+
+  es.addEventListener("put", handle(false));
+  es.addEventListener("patch", handle(true));
+  es.addEventListener("cancel", () => { if (onError) onError("cancel"); });
+  es.onerror = () => { if (!closed && onError) onError("network"); };
+
+  return () => { closed = true; try { es.close(); } catch (e) {} };
+}
+
+async function dbReachable() {
+  if (!dbConfigured()) return false;
+  const r = await dbGet(".info/serverTimeOffset");
+  return r.status !== "error";
+}
+
+/* 房間代碼由用戶端產生。刻意避開容易看錯的字（0/O、1/I/L），
+   六碼在現場念出來或打進手機都還算輕鬆——比先前那串隨機 bucket id 好得多。 */
+const ROOM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newRoomCode() {
+  let s = "";
+  for (let i = 0; i < 6; i++) s += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+  return s;
+}
+
+async function createRoom(attempts = 5) {
+  if (!dbConfigured()) return null;
+  for (let i = 0; i < attempts; i++) {
+    const code = newRoomCode();
+    const existing = await dbGet(`rooms/${code}/session`);
+    if (existing.status === "error") return null;
+    if (existing.status === "missing") {
+      const ok = await dbPut(`rooms/${code}/session`, { createdAt: Date.now() });
+      return ok ? code : null;
+    }
+  }
+  return null;
 }
 
 function formatTime(totalSeconds) {
@@ -1115,84 +1215,75 @@ function App() {
   const myIdRef = useRef(loadOrCreateId());
 
   const activeRoom = role === "player" ? joinedRoom : room;
-  // roomReal === false 代表連不上 kvdb（單機測試模式），這時完全不要發網路請求。
+  // roomReal === false 代表同步後端不可用（未設定或連不上），這時完全不要發網路請求。
   const syncEnabled = !!activeRoom && roomReal !== false;
 
-  /* 讓非同步的寫入流程隨時拿得到最新的本地 state，不必把它放進 useCallback 的相依陣列。 */
+  /* 讓非同步流程隨時拿得到最新的本地 state，不必把它放進 useCallback 的相依陣列。 */
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  /* 寫入進行中（以及寫完後的短暫沉澱期）不要套用輪詢結果，
-     否則自己剛送出的異動會被一個較早發出、還在路上的輪詢回應蓋回舊值。 */
-  const writingRef = useRef(0);
-  const settleUntilRef = useRef(0);
-  const repairingRef = useRef(false);
   const judgingRef = useRef(false);
-  /* 連續操作時會有多個寫入同時在路上。較早發出、較晚回來的那個若把結果套回畫面，
-     就會把使用者已經前進的關卡拉回去。只有最新一次寫入有資格更新畫面。 */
-  const writeSeqRef = useRef(0);
 
-  /* 而且同一台裝置連續發出的寫入，也不能任其並行：網路抖動會讓較晚發出的先抵達、
-     較早發出的後抵達，伺服器最後就停在舊的值上（指揮官快速換關卡時會整個退回去）。
-     這裡把本機的寫入串成一條佇列，確保抵達順序等於操作順序。 */
+  /* 同一台裝置連續發出的寫入不能任其並行：網路抖動會讓較晚發出的先抵達，
+     指揮官快速換關卡時整場會退回舊關卡。串成一條佇列確保抵達順序等於操作順序。 */
   const writeChainRef = useRef(Promise.resolve());
   const enqueueWrite = useCallback((fn) => {
     const run = writeChainRef.current.then(fn, fn);
     writeChainRef.current = run.then(() => {}, () => {});
     return run;
   }, []);
-  const beginWrite = useCallback(() => { writingRef.current += 1; }, []);
-  const endWrite = useCallback(() => {
-    writingRef.current = Math.max(0, writingRef.current - 1);
-    settleUntilRef.current = Date.now() + 800;
-  }, []);
 
+  /* 開房間。後端沒設定或連不上時退回單機模式，畫面會明確說明原因。 */
   useEffect(() => {
     if (role !== "host" || room) return;
+    let cancelled = false;
     (async () => {
-      const id = await createBucket();
-      if (id) { setRoom(id); setRoomReal(true); }
-      else { setRoom("local" + Math.random().toString(36).slice(2, 8)); setRoomReal(false); }
+      const code = await createRoom();
+      if (cancelled) return;
+      if (code) { setRoom(code); setRoomReal(true); }
+      else { setRoom(newRoomCode()); setRoomReal(false); }
     })();
+    return () => { cancelled = true; };
   }, [role, room]);
 
-  /* 指揮官端的寫入：只負責流程狀態（活動、關卡、計時器、任務卡、故事文字）。
-     takenNumbers 與 ttol.profiles / ttol.guesses 是玩家寫的，寫回去時一律以遠端最新值為準，
-     否則指揮官那份過期快照會把大家剛填好的資料整包抹掉。
-     只有明確要清空該輪資料的動作（抽新任務卡、重置、換活動）才傳 resetPlayerData。 */
+  /* 指揮官擁有的流程狀態寫在 session 底下；玩家的資料在別的路徑，
+     所以這裡用 PATCH 只送出流程欄位，永遠不可能蓋到玩家的東西。 */
   const pushState = useCallback(async (next, opts = {}) => {
-    // 蓋上指揮官的時鐘，讓玩家能校正自己的倒數（見上方 noteHostTime）
     if (role === "host") next = { ...next, hostTime: Date.now() };
     setState(next);
     if (!syncEnabled) return false;
-    const seq = ++writeSeqRef.current;
-    beginWrite();
-    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => {
-      if (!remote || opts.resetPlayerData) return next;
-      const base = normalizeState(remote);
-      return {
-        ...next,
-        takenNumbers: base.takenNumbers,
-        ttol: { ...(next.ttol || EMPTY_STATE.ttol), profiles: base.ttol.profiles, guesses: base.ttol.guesses },
-      };
-    }));
-    endWrite();
-    setSyncOk(res.ok);
-    if (res.ok && role === "host" && activeRoom) saveBackup(activeRoom, res.value || next);
-    if (res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
-    return res.ok;
-  }, [role, activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
+    const session = {
+      activity: next.activity === undefined ? null : next.activity,
+      stage: next.stage, cellTarget: next.cellTarget,
+      timerConfig: next.timerConfig, timerEndsAt: next.timerEndsAt === undefined ? null : next.timerEndsAt,
+      timerRunning: !!next.timerRunning, totalGroups: next.totalGroups,
+      storyText: next.storyText, cardId: next.cardId === undefined ? null : next.cardId,
+      cardRevealed: !!next.cardRevealed, hostTime: next.hostTime || 0,
+      ttolPhase: (next.ttol && next.ttol.phase) || "writing",
+    };
+    const ok = await enqueueWrite(async () => {
+      // 明確要清空該輪玩家資料的動作（抽新任務卡、重置、換活動）才刪除那些子樹
+      if (opts.resetPlayerData) {
+        await dbPut(`rooms/${activeRoom}/taken`, null);
+        if (opts.resetTtol) {
+          await dbPut(`rooms/${activeRoom}/profiles`, null);
+          await dbPut(`rooms/${activeRoom}/guesses`, null);
+        }
+      }
+      return dbPatch(`rooms/${activeRoom}/session`, session);
+    });
+    setSyncOk(ok);
+    if (ok && role === "host") saveBackup(activeRoom, next);
+    return ok;
+  }, [role, activeRoom, syncEnabled, enqueueWrite]);
 
-  /* 編輯任務卡時每個按鍵都會呼叫這裡。逐鍵送出等於一個字一次 PUT，
-     所以打字類的異動傳 debounce，停止輸入 600ms 後才真的寫出去。 */
+  /* 編輯任務卡時每個按鍵都會呼叫這裡，停止輸入 600ms 後才真的寫出去。 */
   const cardsTimerRef = useRef(null);
   const pushCards = useCallback(async (next, opts = {}) => {
     setCards(next);
     if (!syncEnabled) return false;
     const write = async () => {
-      beginWrite();
-      const ok = await kvSet(activeRoom, "cards", next);
-      endWrite();
+      const ok = await dbPut(`rooms/${activeRoom}/cards`, next);
       setSyncOk(ok);
       return ok;
     };
@@ -1200,288 +1291,185 @@ function App() {
     if (!opts.debounce) return write();
     cardsTimerRef.current = setTimeout(() => { cardsTimerRef.current = null; write(); }, 600);
     return true;
-  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+  }, [activeRoom, syncEnabled]);
   useEffect(() => () => { if (cardsTimerRef.current) clearTimeout(cardsTimerRef.current); }, []);
 
-  /* 玩家端的寫入：mutator 只能改自己那一筆，其餘欄位原封不動沿用遠端最新值。
-     verify 負責確認寫入沒有被同時送出的其他人蓋掉，被蓋掉就重讀重試。 */
-  const mutatePlayerData = useCallback(async (mutator, verify) => {
-    if (!syncEnabled) {
-      const local = mutator(normalizeState(stateRef.current));
-      if (local) setState(local);
-      return { ok: true, value: local || stateRef.current, local: true };
-    }
-    const seq = ++writeSeqRef.current;
-    beginWrite();
-    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => mutator(normalizeState(remote || stateRef.current)), { verify, spread: 300 }));
-    endWrite();
-    setSyncOk(res.ok);
-    // 只有確認寫入成功才更新畫面。失敗時維持原狀並回報，讓使用者知道要再按一次，
-    // 而不是看到一個伺服器上根本不存在的結果。
-    if (res.ok && res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
-    return res;
-  }, [activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
-
-  /* 我這台裝置送出過的東西。寫入成功「當下」不代表就安全了——另一個讀取時間較早的人
-     隨後把整包狀態寫回去，一樣會把我的資料蓋掉。所以每次輪詢都拿這份記錄跟遠端對照，
-     發現自己的東西不見了就補寫回去。這讓整個同步變成會自我修復、最終一致。 */
-  const myDataRef = useRef({ profile: null, guesses: {}, claim: null });
-
-  const repairPatch = useCallback((base) => {
-    const mine = myDataRef.current;
-    const myId = myIdRef.current;
-    let next = base, changed = false;
-    /* 指揮官換活動時會清空全部資料；那不是「被蓋掉」，不能補寫回去，否則重置會被玩家撤銷。
-       情報與判讀也只在情報交換那一關才需要維護。 */
-    if (!base.activity) { myDataRef.current = { profile: null, guesses: {}, claim: null }; return null; }
-    const inTtol = base.stage === "ttol";
-    if (inTtol && mine.profile && !base.ttol.profiles[myId]) {
-      next = { ...next, ttol: { ...next.ttol, profiles: { ...next.ttol.profiles, [myId]: mine.profile } } };
-      changed = true;
-    }
-    Object.keys(inTtol ? mine.guesses : {}).forEach((targetId) => {
-      const want = mine.guesses[targetId];
-      const have = (next.ttol.guesses[targetId] || {})[myId];
-      if (!have || have.attempts < want.attempts) {
-        // result 是對方的裝置判定後寫上的，補寫自己的猜測時不能把它蓋掉
-        const merged = have && have.attempts === want.attempts ? { ...want, result: have.result } : want;
-        next = { ...next, ttol: { ...next.ttol, guesses: { ...next.ttol.guesses, [targetId]: { ...(next.ttol.guesses[targetId] || {}), [myId]: merged } } } };
-        changed = true;
-      }
-    });
-    if (mine.claim && base.cardId === mine.claim.cardId) {
-      const taken = next.takenNumbers[mine.claim.group] || {};
-      if (taken[mine.claim.number] === undefined) {
-        next = { ...next, takenNumbers: { ...next.takenNumbers, [mine.claim.group]: { ...taken, [mine.claim.number]: myId } } };
-        changed = true;
-      } else if (taken[mine.claim.number] !== myId) {
-        mine.claim = null; // 號碼已經被別人拿走，不能硬塞成兩人同號，讓畫面回到可重抽的狀態
-      }
-    } else if (mine.claim && base.cardId !== mine.claim.cardId) {
-      mine.claim = null; // 已經換了新的一輪任務卡
-    }
-    return changed ? next : null;
-  }, []);
-
-  /* 認領一張情境牌。pool 是「這張卡上真的填了內容的情境號碼」，
-     每次重試都會依最新的遠端資料重新挑，所以不會挑到別人剛拿走的、也不會抽到空白情境。 */
+  /* 搶一張情境牌。每個號碼是一個獨立路徑，用 ETag 條件寫入認領：
+     別人搶先一步時伺服器回 412，我們就換下一個號碼再試。
+     兩個人拿到同一號在結構上不可能發生，不需要事後驗證或補寫。 */
   const claimScenario = useCallback(async (groupKey, pool) => {
     const myId = myIdRef.current;
-    let picked = null, full = false;
-    const res = await mutatePlayerData(
-      (base) => {
-        const taken = base.takenNumbers[groupKey] || {};
-        const mine = Object.keys(taken).find((n) => taken[n] === myId);
-        if (mine) { picked = Number(mine); full = false; return null; } // 已經抽過，不重複寫入
-        const available = pool.filter((n) => taken[n] === undefined);
-        if (available.length === 0) { picked = null; full = true; return null; }
-        full = false;
-        picked = available[Math.floor(Math.random() * available.length)];
-        return { ...base, takenNumbers: { ...base.takenNumbers, [groupKey]: { ...taken, [picked]: myId } } };
-      },
-      (after) => picked !== null && ((normalizeState(after).takenNumbers[groupKey] || {})[picked] === myId)
-    );
-    if (!res.ok) return { picked: null, full: false, failed: true };
-    if (picked !== null) myDataRef.current.claim = { cardId: stateRef.current.cardId, group: groupKey, number: picked };
-    return { picked, full, failed: false };
-  }, [mutatePlayerData]);
+    const taken = (stateRef.current.takenNumbers && stateRef.current.takenNumbers[groupKey]) || {};
+    const mine = Object.keys(taken).find((n) => taken[n] === myId);
+    if (mine) return { picked: Number(mine), full: false, failed: false };
 
-  const myLieRef = useRef(null); // 只存在這台裝置，從不上傳
-  useEffect(() => { if (activeRoom) myLieRef.current = loadLie(activeRoom); }, [activeRoom]);
+    if (!syncEnabled) { // 單機模式：直接改本地狀態
+      const free = pool.filter((n) => taken[n] === undefined);
+      if (!free.length) return { picked: null, full: true, failed: false };
+      const pick = free[Math.floor(Math.random() * free.length)];
+      const base = stateRef.current;
+      setState({ ...base, takenNumbers: { ...base.takenNumbers, [groupKey]: { ...taken, [pick]: myId } } });
+      return { picked: pick, full: false, failed: false };
+    }
 
-  const submitProfile = useCallback(async (profile, lieIndex) => {
-    const myId = myIdRef.current;
-    // 答案先落在本機（含 localStorage，重整後仍能繼續當裁判），上傳的內容不含答案
-    myLieRef.current = lieIndex;
-    if (activeRoom) saveLie(activeRoom, lieIndex);
-    const res = await mutatePlayerData(
-      (base) => ({ ...base, ttol: { ...base.ttol, profiles: { ...base.ttol.profiles, [myId]: profile } } }),
-      (after) => !!(normalizeState(after).ttol.profiles[myId])
-    );
-    if (res.ok) myDataRef.current.profile = profile;
-    return res;
-  }, [mutatePlayerData, activeRoom]);
-
-  /* 本人的裝置擔任裁判：把針對自己、還沒判定的猜測比對答案後寫回結果。 */
-  const judgeGuesses = useCallback(async () => {
-    const myId = myIdRef.current;
-    const lie = myLieRef.current;
-    if (lie === null || lie === undefined) return null;
-    return mutatePlayerData((base) => {
-      const mine = base.ttol.guesses[myId];
-      if (!mine) return null;
-      let changed = false;
-      const next = {};
-      Object.keys(mine).forEach((judgeId) => {
-        const g = mine[judgeId];
-        if (g && (g.result === null || g.result === undefined) && typeof g.pick === "number") {
-          next[judgeId] = { ...g, result: g.pick === lie ? "correct" : (g.attempts >= 2 ? "wrong" : "pending") };
-          changed = true;
-        } else next[judgeId] = g;
-      });
-      if (!changed) return null;
-      return { ...base, ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [myId]: next } } };
-    });
-  }, [mutatePlayerData]);
-
-  /* 送出判讀時只寫「我猜第幾則」，對錯留白——判定要等對方的裝置比對答案後寫回來。 */
-  const submitGuess = useCallback(async (targetId, pickedIndex) => {
-    const myId = myIdRef.current;
-    let attempts = 0, recorded = null;
-    const res = await mutatePlayerData(
-      (base) => {
-        const forTarget = base.ttol.guesses[targetId] || {};
-        const prev = forTarget[myId] || null;
-        if (prev && (prev.result === "correct" || prev.result === "wrong")) return null; // 兩次機會已用完
-        if (prev && (prev.result === null || prev.result === undefined)) return null;    // 還在等對方判定
-        attempts = (prev ? prev.attempts : 0) + 1;
-        recorded = { attempts, pick: pickedIndex, result: null };
-        return {
-          ...base,
-          ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [targetId]: { ...forTarget, [myId]: recorded } } },
-        };
-      },
-      (after) => {
-        const mine = (normalizeState(after).ttol.guesses[targetId] || {})[myId];
-        return !!mine && mine.attempts >= attempts;
-      }
-    );
-    if (res.ok && recorded) myDataRef.current.guesses[targetId] = recorded;
-    return res;
-  }, [mutatePlayerData]);
-
-  useEffect(() => {
-    if (!activeRoom) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      if (syncEnabled) {
-        const remoteCards = await kvGet(activeRoom, "cards");
-        const remoteState = await kvGet(activeRoom, "state");
-        if (cancelled) return;
-        if (remoteCards) setCards(remoteCards);
-        if (remoteState) setState(normalizeState(remoteState));
-      }
-      if (cancelled) return;
-      setMyGroup(loadGroup(activeRoom));
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    const candidates = pool.filter((n) => taken[n] === undefined).sort(() => Math.random() - 0.5);
+    let sawError = false;
+    for (const n of candidates) {
+      const r = await dbClaim(`rooms/${activeRoom}/taken/${groupKey}/${n}`, myId);
+      if (r === "won") return { picked: n, full: false, failed: false };
+      if (r === "error") { sawError = true; break; }
+    }
+    if (sawError) return { picked: null, full: false, failed: true };
+    return { picked: null, full: true, failed: false };
   }, [activeRoom, syncEnabled]);
 
-  /* 指揮官同樣要輪詢：他的「已提交名單」與「抽取進度」讀的都是玩家寫進來的資料，
-     不重新拉取的話那兩塊永遠是空的，而且他手上的過期快照一寫回去就會清掉玩家的成果。 */
-  /* 現場三十個人各自每 1.5 秒固定發兩個請求，對一個免費服務來說是不小的量。
-     兩個省法：畫面被切到背景（手機鎖屏、切去別的 App）時完全不發請求；
-     以及狀態一直沒變化時把間隔逐步拉長，一有變動立刻恢復到最短間隔。 */
-  const lastRawRef = useRef("");
+  const myLieRef = useRef(null); // 假情報的答案只存在這台裝置，從不上傳
+  useEffect(() => { if (activeRoom) myLieRef.current = loadLie(activeRoom); }, [activeRoom]);
+
+  /* 每位玩家只寫自己的路徑，彼此零競爭。 */
+  const submitProfile = useCallback(async (profile, lieIndex) => {
+    myLieRef.current = lieIndex;
+    if (activeRoom) saveLie(activeRoom, lieIndex);
+    if (!syncEnabled) {
+      const base = stateRef.current;
+      setState({ ...base, ttol: { ...base.ttol, profiles: { ...base.ttol.profiles, [myIdRef.current]: profile } } });
+      return { ok: true, local: true };
+    }
+    const ok = await dbPut(`rooms/${activeRoom}/profiles/${myIdRef.current}`, profile);
+    setSyncOk(ok);
+    return { ok };
+  }, [activeRoom, syncEnabled]);
+
+  /* 送出判讀：只寫「我猜第幾則」，對錯留白等對方的裝置比對答案後寫回。
+     attempts 只有我自己會改，所以直接依目前值加一即可，不需要防競爭。 */
+  const submitGuess = useCallback(async (targetId, pickedIndex) => {
+    const myId = myIdRef.current;
+    const cur = ((stateRef.current.ttol.guesses || {})[targetId] || {})[myId] || null;
+    if (cur && (cur.result === "correct" || cur.result === "wrong")) return { ok: true, skipped: true };
+    if (cur && (cur.result === null || cur.result === undefined)) return { ok: true, skipped: true };
+    const record = { attempts: (cur ? cur.attempts : 0) + 1, pick: pickedIndex, result: null };
+    if (!syncEnabled) {
+      const base = stateRef.current;
+      const forTarget = { ...(base.ttol.guesses[targetId] || {}), [myId]: record };
+      setState({ ...base, ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [targetId]: forTarget } } });
+      return { ok: true, local: true };
+    }
+    const ok = await dbPatch(`rooms/${activeRoom}/guesses/${targetId}/${myId}`, record);
+    setSyncOk(ok);
+    return { ok };
+  }, [activeRoom, syncEnabled]);
+
+  /* 本人的裝置擔任裁判：把針對自己、還沒判定的猜測比對答案後寫回結果。 */
+  const judgeGuesses = useCallback(async (tree) => {
+    const myId = myIdRef.current;
+    const lie = myLieRef.current;
+    if (lie === null || lie === undefined || !syncEnabled) return;
+    const mine = fbMap(fbMap(tree.guesses)[myId]);
+    for (const judgeId of Object.keys(mine)) {
+      const g = mine[judgeId];
+      if (!g || typeof g.pick !== "number") continue;
+      if (g.result !== null && g.result !== undefined) continue;
+      const result = g.pick === lie ? "correct" : (g.attempts >= 2 ? "wrong" : "pending");
+      await dbPatch(`rooms/${activeRoom}/guesses/${myId}/${judgeId}`, { result });
+    }
+  }, [activeRoom, syncEnabled]);
+
+  /* 把房間樹組成畫面用的狀態。所有子樹都要過 fbMap：
+     Firebase 會把「鍵值是連續整數」的物件回成陣列。 */
+  const treeToState = useCallback((tree) => {
+    const t = tree || {};
+    const s = (t.session && typeof t.session === "object") ? t.session : {};
+    const taken = fbMap(t.taken);
+    const normTaken = {};
+    Object.keys(taken).forEach((g) => { normTaken[g] = fbMap(taken[g]); });
+    const guesses = fbMap(t.guesses);
+    const normGuesses = {};
+    Object.keys(guesses).forEach((k) => { normGuesses[k] = fbMap(guesses[k]); });
+    return normalizeState({
+      ...s,
+      takenNumbers: normTaken,
+      ttol: { phase: s.ttolPhase, profiles: fbMap(t.profiles), guesses: normGuesses },
+    });
+  }, []);
+
+  /* 即時訂閱整個房間。SSE 取代了原本的輪詢：不再有固定間隔的請求，
+     變動由伺服器推過來，也不需要「自己送出的東西被蓋掉就補寫」那套自我修復。 */
   useEffect(() => {
-    if (!syncEnabled) return;
-    let cancelled = false;
-    let timer = null;
-    const baseDelay = role === "player" ? 1500 : 2500;
-    const capDelay = role === "player" ? 3000 : 6000;
-    let delay = baseDelay;
+    if (!activeRoom) return;
+    if (!syncEnabled) { setLoading(false); setMyGroup(loadGroup(activeRoom)); return; }
+    setLoading(true);
+    setMyGroup(loadGroup(activeRoom));
+    let firstArrived = false;
 
-    const tick = async () => {
-      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
-      const read = await kvRead(activeRoom, "state");
-      if (cancelled) return;
-      const remoteState = read.value;
+    const unsubscribe = dbStream(
+      `rooms/${activeRoom}`,
+      (tree) => {
+        if (!firstArrived) { firstArrived = true; setLoading(false); }
+        setSyncOk(true);
+        const t = tree || {};
+        if (role === "player") noteHostTime((t.session || {}).hostTime);
+        const cardsFromTree = Array.isArray(t.cards) ? t.cards : (t.cards ? Object.values(t.cards) : null);
+        if (cardsFromTree && role === "player") setCards(cardsFromTree);
+        setState(treeToState(t));
 
-      /* 伺服器明確回報這個房間沒有資料（不是連線失敗），但遊戲其實正在進行中，
-         代表房間被清掉了——沒有存取控制的公開儲存本來就擋不住這件事。
-         指揮官手上有本機備份，直接還原回去，不必重來一場。 */
-      if (role === "host" && read.status === "missing") {
-        const backup = loadBackup(activeRoom);
-        const live = backup && backup.activity;
-        if (live) {
-          setDataRestored(true);
-          await pushState(normalizeState(backup), { resetPlayerData: true });
-          delay = baseDelay;
-          return;
-        }
-      }
-      // 任務卡只有指揮官會改，所以他不需要拉回來（拉回來反而會蓋掉正在編輯的文字）；
-      // 玩家也只有在偽裝洞穴那關才用得到，其餘時間不必浪費請求。
-      let remoteCards = null;
-      if (role === "player" && remoteState && remoteState.stage === "bar") {
-        remoteCards = await kvGet(activeRoom, "cards");
-        if (cancelled) return;
-      }
-      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
-      if (remoteCards) setCards(remoteCards);
-      if (remoteState) {
-        if (role === "player") noteHostTime(remoteState.hostTime);
-        const fresh = normalizeState(remoteState);
-        // 自己送出過、但遠端已經看不到的東西，就地補回來（畫面先顯示，背景再寫回伺服器）。
-        const patched = role === "player" ? repairPatch(fresh) : null;
-        setState(patched || fresh);
-        if (patched && !repairingRef.current) {
-          repairingRef.current = true;
-          mutatePlayerData((b) => repairPatch(b)).finally(() => { repairingRef.current = false; });
-        }
-        /* 別人猜了我的假情報，判定要由我這台裝置做——答案只有我這裡有。 */
-        if (role === "player" && !judgingRef.current) {
-          const mine = fresh.ttol.guesses[myIdRef.current];
-          const pendingJudge = mine && Object.keys(mine).some((j) => mine[j] && (mine[j].result === null || mine[j].result === undefined));
-          if (pendingJudge) {
-            judgingRef.current = true;
-            judgeGuesses().finally(() => { judgingRef.current = false; });
+        /* 房間被清空但遊戲其實正在進行——指揮官從本機備份還原。
+           房間沒有存取控制，這是唯一擋得住「整份被刪掉」的辦法。 */
+        if (role === "host" && !t.session) {
+          const backup = loadBackup(activeRoom);
+          if (backup && backup.activity) {
+            setDataRestored(true);
+            pushState(normalizeState(backup));
           }
         }
-      }
-      setSyncOk(remoteState !== null);
+        if (role === "player" && !judgingRef.current) {
+          judgingRef.current = true;
+          Promise.resolve(judgeGuesses(t)).finally(() => { judgingRef.current = false; });
+        }
+      },
+      () => { setSyncOk(false); }
+    );
 
-      const raw = remoteState ? JSON.stringify(remoteState) : "";
-      if (raw !== lastRawRef.current) { lastRawRef.current = raw; delay = baseDelay; }
-      else delay = Math.min(Math.round(delay * 1.5), capDelay);
-    };
+    // SSE 若一直沒送來第一筆資料，至少讓載入畫面退場
+    const bail = setTimeout(() => { if (!firstArrived) setLoading(false); }, 8000);
+    return () => { clearTimeout(bail); unsubscribe(); };
+  }, [role, activeRoom, syncEnabled, treeToState, judgeGuesses, pushState]);
 
-    function schedule(ms) { if (!cancelled) timer = setTimeout(loop, ms); }
-    async function loop() {
-      if (cancelled) return;
-      if (typeof document !== "undefined" && document.hidden) { delay = baseDelay; schedule(baseDelay); return; }
-      try { await tick(); } catch (e) { /* 單次輪詢失敗不該中斷整個迴圈 */ }
-      schedule(delay);
-    }
-    function onVisibility() {
-      if (typeof document !== "undefined" && !document.hidden) {
-        delay = baseDelay;
-        if (timer) clearTimeout(timer);
-        schedule(0);
-      }
-    }
-
-    schedule(baseDelay);
-    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData, judgeGuesses, pushState]);
+  /* 指揮官自己編輯任務卡時不要被推播蓋掉，所以只在初次載入時取一次。 */
+  useEffect(() => {
+    if (!syncEnabled || role !== "host") return;
+    let cancelled = false;
+    (async () => {
+      const r = await dbGet(`rooms/${activeRoom}/cards`);
+      if (cancelled || r.status !== "ok" || !r.value) return;
+      setCards(Array.isArray(r.value) ? r.value : Object.values(r.value));
+    })();
+    return () => { cancelled = true; };
+  }, [role, activeRoom, syncEnabled]);
 
   async function handleJoin(code) {
+    const clean = String(code || "").trim().toUpperCase();
     setJoining(true); setJoinError("");
-    const remoteState = await kvGet(code, "state");
-    const remoteCards = await kvGet(code, "cards");
-    if (!remoteState && !remoteCards) {
-      const reachable = await probeReachable();
+    if (!dbConfigured()) {
       setJoining(false);
-      if (!reachable) {
-        setJoinError("目前連不上同步伺服器（不是代碼打錯），請檢查網路連線，或請指揮官改用「測試：進入皮克敏介面」在同一台裝置測試。");
-      } else {
-        setJoinError("找不到這組房間代碼，請確認指揮官給的代碼是否正確。");
-      }
+      setJoinError("這個網站還沒有設定同步伺服器，目前無法多人連線。請指揮官改用「測試：進入皮克敏介面」在同一台裝置進行。");
       return;
     }
+    const r = await dbGet(`rooms/${clean}/session`);
     setJoining(false);
-    setRoomReal(true); // 能讀到房間資料，代表同步伺服器是通的
-    setJoinedRoom(code);
+    if (r.status === "error") {
+      setJoinError("目前連不上同步伺服器（不是代碼打錯），請確認網路連線後再試一次。");
+      return;
+    }
+    if (r.status === "missing") {
+      setJoinError("找不到這組房間代碼，請確認指揮官給的代碼是否正確。");
+      return;
+    }
+    setRoomReal(true);
+    setJoinedRoom(clean);
     setRole("player");
-    saveSession({ room: code });
+    saveSession({ room: clean });
   }
+
   function enterTestPlayer() { setJoinedRoom(room); setRole("player"); }
   function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); saveSession(null); }
   function chooseGroup(n) { setMyGroup(n); if (activeRoom) saveGroup(activeRoom, n); }
@@ -1535,7 +1523,7 @@ function App() {
             )}
             {role === "host" && activity && !editingStory && (
               <button
-                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true })}
+                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true, resetTtol: true })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
                 style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >

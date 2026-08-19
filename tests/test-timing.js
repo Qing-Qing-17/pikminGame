@@ -50,20 +50,20 @@ const N = 6;
 
   results.sort((a, b) => a.ms - b.ms);
   for (const r of results) console.log(`  皮${r.i}: ${r.outcome}，耗時 ${(r.ms / 1000).toFixed(1)}s`);
-  const immediate = Object.keys((world.store.read(code, "state").ttol || {}).profiles || {}).length;
+  const immediate = Object.keys(((await world.db.room(code)).ttol || {}).profiles || {}).length;
   console.log(`  按下提交後立刻查看：伺服器上有 ${immediate} 份`);
 
   // 自我修復是靠輪詢進行的，給它幾個輪詢週期
   for (let s = 3; s <= 15; s += 3) {
     await host.waitForTimeout(3000);
-    const n = Object.keys((world.store.read(code, "state").ttol || {}).profiles || {}).length;
+    const n = Object.keys(((await world.db.room(code)).ttol || {}).profiles || {}).length;
     console.log(`  ${s}s 後：${n} 份`);
     if (n === N) break;
   }
-  const stored = world.store.read(code, "state");
+  const stored = (await world.db.room(code));
   const n = Object.keys((stored.ttol && stored.ttol.profiles) || {}).length;
   ok(n === N, `最終伺服器上共有 ${n} 份情報（應為 ${N}）`);
-  console.log(`  kvdb 請求量: GET ${world.store.stats.get} / PUT ${world.store.stats.put}`);
+  console.log(`  kvdb 請求量: GET ${world.stats.requests} / PUT ${world.stats.requests}`);
   const slowest = Math.max(...results.map((r) => r.ms));
   ok(slowest < 12000, `最慢的一位在 ${(slowest / 1000).toFixed(1)}s 內完成（門檻 12s）`);
 

@@ -49,7 +49,7 @@ async function myNumber(page) {
   ok(nums.every((n) => n !== null), "四人都拿到號碼");
   ok(new Set(nums.filter((n) => n !== null)).size === nums.filter((n) => n !== null).length, "四人的號碼互不重複");
 
-  const stored = world.store.read(code, "state");
+  const stored = (await world.db.room(code));
   const taken = (stored.takenNumbers && stored.takenNumbers["1"]) || {};
   const count = Array.isArray(taken) ? taken.length : Object.keys(taken).length;
   ok(count === N, `伺服器記錄了 ${count} 張認領（應為 ${N}）：${JSON.stringify(taken)}`);
