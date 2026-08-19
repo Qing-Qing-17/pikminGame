@@ -16,6 +16,25 @@
 </head>
 <body>
 <div id="root"></div>
+<noscript><div style="padding:24px;font-family:sans-serif">這個頁面需要 JavaScript 才能執行。</div></noscript>
+<script>
+  /* 四支外部腳本任何一支載入失敗，原本就是一片空白。這裡在啟動前先確認相依套件都在，
+     不在的話至少讓現場看得懂發生什麼事、該怎麼辦。 */
+  window.addEventListener("DOMContentLoaded", function () {
+    var missing = [];
+    if (typeof React === "undefined") missing.push("React");
+    if (typeof ReactDOM === "undefined") missing.push("ReactDOM");
+    if (typeof Babel === "undefined") missing.push("Babel");
+    if (!missing.length) return;
+    document.getElementById("root").innerHTML =
+      '<div style="max-width:26rem;margin:15vh auto;padding:24px;text-align:center;font-family:sans-serif;color:#1B3A4B">' +
+      '<div style="font-size:18px;font-weight:800;margin-bottom:8px">載入失敗</div>' +
+      '<p style="font-size:13px;line-height:1.8;color:#456">這個頁面需要從網路載入 ' + missing.join("、") +
+      '。請確認網路連線後重新整理；若現場網路會擋外部網站，請改用離線版（見 README 的建置說明）。</p>' +
+      '<button onclick="location.reload()" style="margin-top:12px;padding:10px 20px;border-radius:999px;border:0;background:#FFC93C;font-weight:700">重新載入</button>' +
+      '</div>';
+  });
+</script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
@@ -1254,11 +1273,20 @@ function App() {
 
   /* 指揮官同樣要輪詢：他的「已提交名單」與「抽取進度」讀的都是玩家寫進來的資料，
      不重新拉取的話那兩塊永遠是空的，而且他手上的過期快照一寫回去就會清掉玩家的成果。 */
+  /* 現場三十個人各自每 1.5 秒固定發兩個請求，對一個免費服務來說是不小的量。
+     兩個省法：畫面被切到背景（手機鎖屏、切去別的 App）時完全不發請求；
+     以及狀態一直沒變化時把間隔逐步拉長，一有變動立刻恢復到最短間隔。 */
+  const lastRawRef = useRef("");
   useEffect(() => {
     if (!syncEnabled) return;
     let cancelled = false;
+    let timer = null;
+    const baseDelay = role === "player" ? 1500 : 2500;
+    const capDelay = role === "player" ? 3000 : 6000;
+    let delay = baseDelay;
+
     const tick = async () => {
-      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) return;
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
       const remoteState = await kvGet(activeRoom, "state");
       if (cancelled) return;
       // 任務卡只有指揮官會改，所以他不需要拉回來（拉回來反而會蓋掉正在編輯的文字）；
@@ -1268,23 +1296,48 @@ function App() {
         remoteCards = await kvGet(activeRoom, "cards");
         if (cancelled) return;
       }
-      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) return;
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
       if (remoteCards) setCards(remoteCards);
       if (remoteState) {
         if (role === "player") noteHostTime(remoteState.hostTime);
-        const base = normalizeState(remoteState);
+        const fresh = normalizeState(remoteState);
         // 自己送出過、但遠端已經看不到的東西，就地補回來（畫面先顯示，背景再寫回伺服器）。
-        const patched = role === "player" ? repairPatch(base) : null;
-        setState(patched || base);
+        const patched = role === "player" ? repairPatch(fresh) : null;
+        setState(patched || fresh);
         if (patched && !repairingRef.current) {
           repairingRef.current = true;
           mutatePlayerData((b) => repairPatch(b)).finally(() => { repairingRef.current = false; });
         }
       }
       setSyncOk(remoteState !== null);
+
+      const raw = remoteState ? JSON.stringify(remoteState) : "";
+      if (raw !== lastRawRef.current) { lastRawRef.current = raw; delay = baseDelay; }
+      else delay = Math.min(Math.round(delay * 1.5), capDelay);
     };
-    const id = setInterval(tick, role === "player" ? 1500 : 2500);
-    return () => { cancelled = true; clearInterval(id); };
+
+    function schedule(ms) { if (!cancelled) timer = setTimeout(loop, ms); }
+    async function loop() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) { delay = baseDelay; schedule(baseDelay); return; }
+      try { await tick(); } catch (e) { /* 單次輪詢失敗不該中斷整個迴圈 */ }
+      schedule(delay);
+    }
+    function onVisibility() {
+      if (typeof document !== "undefined" && !document.hidden) {
+        delay = baseDelay;
+        if (timer) clearTimeout(timer);
+        schedule(0);
+      }
+    }
+
+    schedule(baseDelay);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData]);
 
   async function handleJoin(code) {
@@ -1450,8 +1503,44 @@ function App() {
   );
 }
 
+/* 任何一處 render 例外原本都會讓整頁變成空白，現場沒人知道發生什麼事。
+   這裡兜住例外並提供兩條退路：重新載入，或清掉本機資料後重新載入
+   （本機資料含玩家身分與已加入的房間，資料本身壞掉時需要這條路）。 */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("畫面發生錯誤：", error, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const box = { background: COLORS.bg2, border: `1px solid ${COLORS.cardEdge}` };
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6" style={{ background: COLORS.bg, fontFamily: "'Noto Sans TC', sans-serif" }}>
+        <div className="max-w-sm w-full rounded-2xl p-6 text-center" style={box}>
+          <div className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>畫面出了點問題</div>
+          <p className="text-xs mb-5" style={{ color: COLORS.creamDim }}>
+            遊戲進度存在伺服器上，重新載入通常就會恢復。若反覆出現，再試下面第二個按鈕。
+          </p>
+          <div className="flex flex-col gap-2">
+            <button onClick={() => location.reload()} className="px-4 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+              重新載入
+            </button>
+            <button
+              onClick={() => { try { localStorage.clear(); } catch (e) {} location.reload(); }}
+              className="px-4 py-2.5 rounded-full text-sm"
+              style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}
+            >
+              清除本機資料並重新載入
+            </button>
+          </div>
+          <pre className="text-[10px] mt-4 text-left overflow-x-auto" style={{ color: COLORS.creamDim, opacity: 0.7 }}>{String(this.state.error && this.state.error.message)}</pre>
+        </div>
+      </div>
+    );
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+root.render(<ErrorBoundary><App /></ErrorBoundary>);
 </script>
 </body>
 </html>
