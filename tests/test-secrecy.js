@@ -35,9 +35,9 @@ async function fill(page, i, lieIdx) {
   await fill(b, 1, 0);
 
   // 共用狀態裡不能有任何答案欄位
-  const raw = JSON.stringify(world.store.read(code, "state"));
+  const raw = JSON.stringify((await world.db.room(code)));
   ok(!/lieIndex/.test(raw), "共用狀態裡沒有 lieIndex 欄位");
-  const profiles = world.store.read(code, "state").ttol.profiles;
+  const profiles = (await world.db.room(code)).ttol.profiles;
   const keys = new Set();
   Object.values(profiles).forEach((p) => Object.keys(p).forEach((k) => keys.add(k)));
   ok(!keys.has("lieIndex") && !keys.has("lie"), `上傳的情報欄位只有：${[...keys].join(", ")}`);
@@ -51,7 +51,7 @@ async function fill(page, i, lieIdx) {
   // 猜測者只上傳「我猜第幾則」，對錯欄位留白，由對方的裝置填上
   let firstRecord = null;
   for (let i = 0; i < 20 && !firstRecord; i++) {
-    const g = (world.store.read(code, "state").ttol.guesses || {});
+    const g = ((await world.db.room(code)).ttol.guesses || {});
     const forA = g[Object.keys(g)[0]] || {};
     firstRecord = Object.values(forA)[0] || null;
     if (!firstRecord) await b.waitForTimeout(200);

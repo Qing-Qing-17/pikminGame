@@ -24,7 +24,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await p.click('button:has-text("提交")');
   await p.waitForSelector("text=提交完成！", { timeout: 20000 });
 
-  let n = Object.keys((world.store.read(code, "state").ttol || {}).profiles || {}).length;
+  let n = Object.keys(((await world.db.room(code)).ttol || {}).profiles || {}).length;
   ok(n === 1, `重置前伺服器上有 ${n} 份情報`);
 
   await host.click("text=重新開始（換活動）");
@@ -32,10 +32,11 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
   // 給玩家好幾個輪詢週期，看看修復機制會不會把舊情報寫回去
   await host.waitForTimeout(12000);
-  const after = world.store.read(code, "state");
+  const after = (await world.db.room(code));
   n = Object.keys((after.ttol || {}).profiles || {}).length;
   ok(n === 0, `重置後伺服器上有 ${n} 份情報（應為 0，舊資料不該被寫回）`);
-  ok(after.activity === null, `重置後 activity 仍為 null（實際: ${JSON.stringify(after.activity)}）`);
+  // Firebase 會直接刪除值為 null 的鍵，所以讀回來是 undefined；兩者都代表「沒有進行中的活動」
+  ok(after.activity == null, `重置後沒有進行中的活動（實際: ${JSON.stringify(after.activity)}）`);
   ok(await p.isVisible("text=等待指揮官選擇今天要進行的活動"), "玩家畫面回到等待選擇活動");
 
   await world.close();

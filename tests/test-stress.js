@@ -44,7 +44,7 @@ const N = 6;
   await Promise.all(players.map((p) => p.click('button:has-text("提交")')));
   await host.waitForTimeout(20000);
 
-  let stored = world.store.read(code, "state");
+  let stored = (await world.db.room(code));
   let profiles = (stored.ttol && stored.ttol.profiles) || {};
   ok(Object.keys(profiles).length === N, `同時提交後，伺服器上有 ${Object.keys(profiles).length} 份情報（應為 ${N}）`);
 
@@ -58,7 +58,7 @@ const N = 6;
   }));
   await host.waitForTimeout(25000);
 
-  stored = world.store.read(code, "state");
+  stored = (await world.db.room(code));
   const guesses = (stored.ttol && stored.ttol.guesses) || {};
   const totalGuesses = Object.values(guesses).reduce((sum, byJudge) => sum + Object.keys(byJudge).length, 0);
   ok(totalGuesses === N, `同時送出後，伺服器上有 ${totalGuesses} 筆判讀（應為 ${N}）`);

@@ -17,8 +17,9 @@ async function countdown(page) {
   await host.waitForSelector("text=遊戲倒數");
 
   // 讓皮克敏這台裝置的時鐘快 5 分鐘
+  const code = await world.db.onlyRoom();
   const p = await world.device("p0", { clockSkewMs: 300000 });
-  await joinAs(p, "bkt1");
+  await joinAs(p, code);
 
   await host.click('button:has-text("01:00")');
   await host.locator('button:has-text("開始")').last().click();

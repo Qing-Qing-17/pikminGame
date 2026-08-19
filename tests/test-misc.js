@@ -16,7 +16,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.waitForSelector("text=已儲存", { timeout: 20000 });
   await host.click('button:has-text("返回")');
   ok(await host.isVisible("text=這是改寫過的序章。"), "編輯後的序章有顯示在畫面上");
-  const stored = world.store.read((await host.evaluate(() => location.href), "bkt1"), "state");
+  const stored = await world.db.room(await world.db.onlyRoom());
   ok(stored.storyText.star.intro === "這是改寫過的序章。", "改寫後的故事有寫進伺服器");
   ok(stored.storyText.training && typeof stored.storyText.training.intro === "string", "另一個活動的故事欄位結構完整");
 
@@ -27,8 +27,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.click('button:has-text("01:00")');
   ok(await host.isVisible("text=01:00"), "可以切換為 1 分鐘");
 
+  const code = await world.db.onlyRoom();
   const p = await world.device("p0");
-  await joinAs(p, "bkt1");
+  await joinAs(p, code);
   // 「開始」與標題列的「重新開始（換活動）」都含有「開始」，取後者以外的那一個
   await host.locator('button:has-text("開始")').last().click();
   await p.waitForTimeout(4000);

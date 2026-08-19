@@ -10,14 +10,15 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.click("text=開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
   await host.waitForSelector("text=皮克敏加入");
+  const code = await world.db.onlyRoom();
   const p = await world.device("p0");
-  await joinAs(p, "bkt1");
+  await joinAs(p, code);
 
   // 靜置 20 秒，量測一位皮克敏會發出多少請求
   await host.waitForTimeout(3000);
-  const before = world.store.stats.get;
+  const before = world.stats.requests;
   await host.waitForTimeout(20000);
-  const reqs = world.store.stats.get - before;
+  const reqs = world.stats.requests - before;
   const perDevicePerSec = reqs / 2 / 20;
   ok(perDevicePerSec < 0.5, `靜置時每台裝置每秒 ${perDevicePerSec.toFixed(2)} 個請求（未調整前為 1.33）`);
 
@@ -25,9 +26,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await p.evaluate(() => Object.defineProperty(document, "hidden", { value: true, configurable: true }));
   await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await host.waitForTimeout(2000);
-  const beforeHidden = world.store.stats.get;
+  const beforeHidden = world.stats.requests;
   await host.waitForTimeout(8000);
-  const hostOnly = world.store.stats.get - beforeHidden;
+  const hostOnly = world.stats.requests - beforeHidden;
   ok(hostOnly <= 4, `皮克敏切到背景後停止輪詢（8 秒內全場僅 ${hostOnly} 個請求，只剩指揮官）`);
 
   // 變動後要立刻恢復靈敏

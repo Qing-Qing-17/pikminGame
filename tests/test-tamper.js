@@ -16,17 +16,17 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.waitForSelector("text=已提交名單", { timeout: 15000 });
   await host.waitForTimeout(3000);
 
-  ok(world.store.read(code, "state").stage === "ttol", "破壞前：伺服器上的關卡正確");
+  ok((await world.db.room(code)).stage === "ttol", "破壞前：伺服器上的關卡正確");
 
   // 模擬外部人士把房間資料清掉
-  world.wipe(code, "state");
-  ok(world.store.read(code, "state") === null, "房間資料已被清空");
+  await world.db.wipe(`rooms/${code}`);
+  ok((await world.db.room(code)) === null, "房間資料已被清空");
 
   // 指揮官應該自動還原
   let restored = null;
   for (let i = 0; i < 15 && !restored; i++) {
     await host.waitForTimeout(2000);
-    restored = world.store.read(code, "state");
+    restored = (await world.db.room(code));
   }
   ok(restored !== null, "指揮官偵測到並自動還原了房間資料");
   ok(restored && restored.stage === "ttol", `還原後仍停在原本的關卡（${restored && restored.stage}）`);

@@ -8,6 +8,12 @@
 - **星攻略**：皮克敏迫降 → 偽裝洞穴
 - **培訓**：皮克敏迫降 → 情報交換 → 偽裝洞穴
 
+線上版：<https://qing-qing-17.github.io/pikminGame/>
+
+> ⚠️ **請先實測一次**：Firebase 資料庫已設定完成，但開發環境的出口代理封鎖了
+> 外部網域，我無法從那裡驗證正式環境。第一次部署後請開啟網站，確認狀態列顯示
+> 「已連線同步」，並用另一支手機實際加入房間試一次。
+
 ## 執行方式
 
 `index.html` 是原始碼，直接用瀏覽器打開就能跑（JSX 在瀏覽器裡即時編譯，
@@ -26,33 +32,73 @@ npm run build      # 產出 dist/index.html
 
 ## 發佈到 GitHub Pages
 
-`.github/workflows/deploy.yml` 會在推上 `main` 時自動建置並發佈 `dist/`。
-第一次使用需要在 GitHub 上開啟 Pages（只需做一次）：
+`.github/workflows/deploy.yml` 會在推上 `main` 時自動建置並發佈 `dist/`，
+網址是 `https://<帳號>.github.io/pikminGame/`。
 
-1. 進入 repo 的 **Settings → Pages**
-2. **Build and deployment → Source** 選 **GitHub Actions**
-
-之後每次推上 `main` 就會自動更新，網址是
-`https://<帳號>.github.io/pikminGame/`。
+流程裡的 `actions/configure-pages` 帶了 `enablement: true`，Pages 沒開啟時它會直接
+用 API 開起來，所以**不需要手動到 Settings 設定**。若那一步失敗（例如組織政策擋住），
+再到 **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions** 即可。
 
 發佈的是建置版，不是根目錄的原始碼——原始碼要在瀏覽器裡即時編譯 JSX，
 現場用手機開會明顯變慢，而且一旦連不到 cdnjs 就整頁打不開。
 
+## 設定 Firebase
+
+多人同步用 Firebase Realtime Database。用 REST API，**不需要 API key，也不需要
+安裝任何 SDK**——只要一個資料庫網址。
+
+目前使用的資料庫是
+`https://pikmingame-3d82e-default-rtdb.asia-southeast1.firebasedatabase.app`，
+已經填在 `index.html` 開頭的 `FIREBASE_DB_URL`。這個網址會出現在網頁原始碼裡，
+是 Firebase 用戶端設定的正常用法。
+
+要換成別的專案時：
+
+1. 到 <https://console.firebase.google.com> 建立專案（不需要開 Google Analytics）
+2. 左側 **建構 → Realtime Database → 建立資料庫**
+3. 地區選 **asia-southeast1**（新加坡，離台灣最近）
+4. 安全性規則先選**測試模式**
+5. 把畫面上方顯示的網址填進 `FIREBASE_DB_URL`
+6. 推上 `main`，網站會自動重新建置與部署
+
+**測試模式的規則有效期是 30 天**，到期後會全部拒絕。活動前請確認還在期限內，
+或改成明確的規則。以下規則允許任何人讀寫房間，但擋掉其他路徑：
+
+```json
+{ "rules": { "rooms": { "$room": { ".read": true, ".write": true } } } }
+```
+
 ## 多人同步
 
-狀態存在 [kvdb.io](https://kvdb.io) 的一個 bucket，房間代碼就是 bucket 代號，
-各裝置以輪詢同步。由於這是一個公開的鍵值儲存、沒有原子操作也沒有存取控制，
-同步層做了幾件事來撐住現場：
+狀態存在 Firebase Realtime Database，房間代碼是六碼英數（避開容易看錯的
+0/O、1/I/L）。每個房間長這樣：
 
-- 寫入前先讀最新值、只套用自己的異動、寫完再讀回驗證，失敗則指數退避重試。
-- 指揮官的寫入一律從遠端保留玩家資料，只有明確重置的動作才覆蓋。
-- 每次輪詢比對「自己送出過的東西還在不在」，不在就補寫回去（自我修復、最終一致）。
+```
+rooms/<代碼>/session                      指揮官擁有的流程狀態
+rooms/<代碼>/cards                        任務卡
+rooms/<代碼>/taken/<小隊>/<號碼>            = 認領者的玩家 id
+rooms/<代碼>/profiles/<玩家 id>            = 情報（不含答案）
+rooms/<代碼>/guesses/<對象>/<判讀者>        = { attempts, pick, result }
+```
+
+這個結構讓幾類問題從根本消失，而不是靠重試補救：
+
+- **指揮官用 `PATCH` 只更新流程欄位**，玩家的資料在別的路徑，不可能被蓋掉。
+- **每位玩家只寫自己的路徑**（`profiles/<我>`、`guesses/<對象>/<我>`），零競爭。
+- **搶情境牌用 `ETag` 條件寫入**（`if-match`）：第二個人會收到 412，換下一個號碼再試。
+  兩人拿到同一號在結構上不可能發生。
+- **用 SSE 即時推播取代輪詢**：靜置時完全不發請求，指揮官變更後約 0.3 秒就同步到玩家。
+
+其餘仍然保留的機制：
+
 - 同一台裝置的寫入串成佇列，避免亂序抵達讓關卡倒退。
-- 畫面切到背景時停止輪詢；狀態沒變化時逐步拉長間隔。
+- 倒數以指揮官的時鐘為共同基準（實測兩台裝置時鐘差 5 分鐘時，倒數相差 0 秒）。
+- 指揮官保留本機備份，房間資料被清空時自動還原。
+- 未設定或連不上時退回單機模式，並明確告知原因，不對死掉的端點空轉。
 
-**已知限制**：房間沒有存取控制，知道代碼的人都能讀寫，參與者也可透過開發者工具
-竄改狀態。指揮官會保留本機備份並在資料被清空時自動還原，但無法防止針對性的竄改——
-那需要一個真正的後端。假情報的答案不會上傳，只留在本人的裝置上並由該裝置判定對錯。
+**已知限制**：測試模式的規則等於公開讀寫，參與者可透過開發者工具竄改狀態。
+真正的權限控管需要登入機制。假情報的答案不會上傳，只留在本人的裝置上並由該裝置
+判定對錯。
 
 ## 測試
 
