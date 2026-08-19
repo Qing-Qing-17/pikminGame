@@ -243,7 +243,7 @@ function saveSession(session) {
 /* ↓↓↓ 把 Firebase 的 Realtime Database 網址貼在這裡 ↓↓↓
    長得像 https://專案名-default-rtdb.asia-southeast1.firebasedatabase.app
    用 REST 不需要 API key，只要這一個網址。留空的話會進入單機模式。 */
-const FIREBASE_DB_URL = "";
+const FIREBASE_DB_URL = "https://pikmingame-3d82e-default-rtdb.asia-southeast1.firebasedatabase.app";
 /* ↑↑↑ 取得方式見 README 的〈設定 Firebase〉 ↑↑↑ */
 
 function dbConfigured() { return /^https?:\/\//.test(String(FIREBASE_DB_URL || "")); }

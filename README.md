@@ -10,9 +10,9 @@
 
 線上版：<https://qing-qing-17.github.io/pikminGame/>
 
-> ⚠️ **上線前還差一步**：需要建立一個 Firebase 專案並把資料庫網址填進
-> `index.html` 的 `FIREBASE_DB_URL`。詳見〈設定 Firebase〉。未填之前網站
-> 仍可開啟，指揮官那台裝置的功能都能用，但參加者無法用手機加入。
+> ⚠️ **請先實測一次**：Firebase 資料庫已設定完成，但開發環境的出口代理封鎖了
+> 外部網域，我無法從那裡驗證正式環境。第一次部署後請開啟網站，確認狀態列顯示
+> 「已連線同步」，並用另一支手機實際加入房間試一次。
 
 ## 執行方式
 
@@ -47,16 +47,19 @@ npm run build      # 產出 dist/index.html
 多人同步用 Firebase Realtime Database。用 REST API，**不需要 API key，也不需要
 安裝任何 SDK**——只要一個資料庫網址。
 
+目前使用的資料庫是
+`https://pikmingame-3d82e-default-rtdb.asia-southeast1.firebasedatabase.app`，
+已經填在 `index.html` 開頭的 `FIREBASE_DB_URL`。這個網址會出現在網頁原始碼裡，
+是 Firebase 用戶端設定的正常用法。
+
+要換成別的專案時：
+
 1. 到 <https://console.firebase.google.com> 建立專案（不需要開 Google Analytics）
 2. 左側 **建構 → Realtime Database → 建立資料庫**
 3. 地區選 **asia-southeast1**（新加坡，離台灣最近）
 4. 安全性規則先選**測試模式**
-5. 把畫面上方顯示的網址（形如
-   `https://專案名-default-rtdb.asia-southeast1.firebasedatabase.app`）
-   填進 `index.html` 開頭的 `FIREBASE_DB_URL`
-6. `npm run build` 後推上 `main`，網站就會自動更新
-
-這個網址會出現在網頁原始碼裡，這是 Firebase 用戶端設定的正常用法。
+5. 把畫面上方顯示的網址填進 `FIREBASE_DB_URL`
+6. 推上 `main`，網站會自動重新建置與部署
 
 **測試模式的規則有效期是 30 天**，到期後會全部拒絕。活動前請確認還在期限內，
 或改成明確的規則。以下規則允許任何人讀寫房間，但擋掉其他路徑：
