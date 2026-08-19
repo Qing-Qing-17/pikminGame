@@ -7,7 +7,7 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
-const NM = path.join(__dirname, "node_modules");
+const NM = path.join(__dirname, "..", "node_modules");
 const LOCAL = {
   "react/18.2.0/umd/react.production.min.js": path.join(NM, "react/umd/react.production.min.js"),
   "react-dom/18.2.0/umd/react-dom.production.min.js": path.join(NM, "react-dom/umd/react-dom.production.min.js"),

@@ -85,6 +85,7 @@ const STORY_DEFAULT = {
 const DEFAULT_TIMER = 180;
 
 const EMPTY_STATE = {
+  hostTime: 0,    // 指揮官寫入當下的時鐘，用來校正各裝置的倒數
   activity: null, // 'star' | 'training'
   stage: "intro",
   cellTarget: 6, timerConfig: DEFAULT_TIMER, timerEndsAt: null, timerRunning: false,
@@ -160,6 +161,23 @@ function saveSession(session) {
 
 /* ---------- kvdb.io 同步 ---------- */
 const KV_ROOT = "https://kvdb.io";
+
+/* 倒數是用「結束時刻」在各裝置本地換算的，所以每支手機的系統時鐘一有偏差，看到的剩餘
+   秒數就會不一樣（差幾分鐘的手機並不罕見）。kvdb 回應的 Date 標頭不在 CORS 安全清單內、
+   跨網域讀不到，所以改以指揮官的時鐘為共同基準：指揮官每次寫入都蓋上自己的時戳，
+   玩家用它推算偏移量。取樣一定會低估——狀態是先被寫入、隔一個輪詢週期才被讀到——
+   所以取歷次觀察到的最大值最接近真值，誤差因此收斂到一個輪詢週期以內，
+   而不是取決於手機時鐘差多少。 */
+let hostClockOffset = 0;
+let haveHostSample = false;
+let lastHostStamp = 0;
+function noteHostTime(stamp) {
+  if (!stamp || stamp === lastHostStamp) return;
+  lastHostStamp = stamp;
+  const candidate = stamp - Date.now();
+  if (!haveHostSample || candidate > hostClockOffset) { hostClockOffset = candidate; haveHostSample = true; }
+}
+function now() { return Date.now() + hostClockOffset; }
 async function createBucket(attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -242,7 +260,7 @@ function useRemainingSeconds(state) {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [state.timerRunning]);
-  if (state.timerRunning && state.timerEndsAt) return Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000));
+  if (state.timerRunning && state.timerEndsAt) return Math.max(0, Math.round((state.timerEndsAt - now()) / 1000));
   return state.timerConfig;
 }
 function nextStage(activity, current) {
@@ -250,6 +268,12 @@ function nextStage(activity, current) {
   const idx = flow.indexOf(current);
   return flow[Math.min(idx + 1, flow.length - 1)];
 }
+function prevStage(activity, current) {
+  const flow = STAGE_FLOW[activity];
+  const idx = flow.indexOf(current);
+  return flow[Math.max(idx - 1, 0)];
+}
+function isFirstStage(activity, current) { return STAGE_FLOW[activity].indexOf(current) <= 0; }
 
 /* ---------- 共用小元件 ---------- */
 function FlipCard({ label, faceLabel, revealed, children, accent, small }) {
@@ -378,13 +402,29 @@ function StoryEditor({ activity, storyText, onSave, onCancel }) {
   );
 }
 
-function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal }) {
+function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen = true }) {
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   function copyCode() {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(room).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
     }
   }
+
+  /* 收合狀態：後面幾關仍然看得到代碼（遲到的人隨時能加入），但不佔滿畫面。 */
+  if (!open) {
+    return (
+      <div className="rounded-xl px-4 py-2 mb-5 flex items-center justify-center gap-3 flex-wrap" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
+        <span className="text-xs" style={{ color: COLORS.creamDim }}>房間代碼</span>
+        <span className="text-lg font-black tracking-widest" style={{ color: roomReal === false ? COLORS.creamDim : COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
+        <button onClick={copyCode} disabled={!room} aria-label="複製房間代碼" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+          {copied ? "已複製！" : "複製"}
+        </button>
+        <button onClick={() => setOpen(true)} className="text-xs underline" style={{ color: COLORS.creamDim }}>展開</button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
       <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>
@@ -404,9 +444,12 @@ function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal }) {
         <div className="text-xs mb-2" style={{ color: COLORS.creamDim }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
       )}
       <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.creamDim : COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
-      <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
-        <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
-      </button>
+      <div className="flex items-center justify-center gap-3 flex-wrap">
+        <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+          <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
+        </button>
+        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline" style={{ color: COLORS.creamDim }}>收合</button>}
+      </div>
     </div>
   );
 }
@@ -450,9 +493,9 @@ function CellHostView({ state, pushState, activity }) {
   function adjustTarget(delta) { pushState({ ...state, cellTarget: Math.min(30, Math.max(2, state.cellTarget + delta)) }); }
   function randomizeTarget() { pushState({ ...state, cellTarget: 2 + Math.floor(Math.random() * 7) }); }
   function setPreset(seconds) { if (!state.timerRunning) pushState({ ...state, timerConfig: seconds, timerEndsAt: null }); }
-  function startTimer() { pushState({ ...state, timerRunning: true, timerEndsAt: Date.now() + (state.timerConfig || 1) * 1000 }); }
+  function startTimer() { pushState({ ...state, timerRunning: true, timerEndsAt: now() + (state.timerConfig || 1) * 1000 }); }
   function pauseTimer() {
-    const rem = state.timerEndsAt ? Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000)) : state.timerConfig;
+    const rem = state.timerEndsAt ? Math.max(0, Math.round((state.timerEndsAt - now()) / 1000)) : state.timerConfig;
     pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: rem });
   }
   function resetTimer() { pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: DEFAULT_TIMER }); }
@@ -588,7 +631,7 @@ function BarHostView({ cards, state, pushState, pushCards }) {
   const [mode, setMode] = useState("game");
   const [flipping, setFlipping] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
-  const poolSize = currentCard ? currentCard.scenarios.length : 8;
+  const poolSize = currentCard ? currentCard.scenarios.filter((s) => s && s.trim()).length : 8;
 
   /* 翻牌動畫是純視覺效果，用本地 flipping 做就好；原本為了動畫而連寫兩次遠端狀態，
      等於多開一個會覆蓋玩家資料的時間窗。抽新卡本來就要清空該輪的認領，所以明確重置。 */
@@ -604,8 +647,8 @@ function BarHostView({ cards, state, pushState, pushCards }) {
     const id = `c${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     pushCards([...cards, { id, line: "新的一句話", scenarios: Array(8).fill("") }]);
   }
-  function updateLine(idx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, line: val } : c))); }
-  function updateScenario(idx, sceneIdx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, scenarios: c.scenarios.map((s, j) => (j === sceneIdx ? val : s)) } : c))); }
+  function updateLine(idx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, line: val } : c)), { debounce: true }); }
+  function updateScenario(idx, sceneIdx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, scenarios: c.scenarios.map((s, j) => (j === sceneIdx ? val : s)) } : c)), { debounce: true }); }
   function deleteCard(idx) { pushCards(cards.filter((_, i) => i !== idx)); }
 
   return (
@@ -683,7 +726,12 @@ function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
   const groupKey = String(myGroup || "solo");
   const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || {};
-  const poolSize = currentCard ? currentCard.scenarios.length : 0;
+  // 只把真的填了字的情境放進抽牌池，免得指揮官沒填完就有人抽到「（尚未填寫）」
+  const pool = useMemo(
+    () => (currentCard ? currentCard.scenarios.map((s, i) => (s && s.trim() ? i + 1 : 0)).filter(Boolean) : []),
+    [currentCard]
+  );
+  const poolSize = pool.length;
 
   /* 自己的號碼是從共用狀態裡「哪一個號碼登記在我名下」推導出來的，不是本地暫存，
      所以重新整理頁面之後仍然找得回來，也不會因此多抽走一個號碼。 */
@@ -703,7 +751,7 @@ function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
   async function drawNumber() {
     if (!currentCard || myNumber !== null || drawing) return;
     setDrawing(true); setNoneLeft(false); setFailed(false);
-    const { full, failed: err } = await claimScenario(groupKey, poolSize);
+    const { full, failed: err } = await claimScenario(groupKey, pool);
     setDrawing(false);
     if (err) setFailed(true);
     else if (full) setNoneLeft(true);
@@ -727,10 +775,11 @@ function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
       </div>
 
       <div className="flex flex-col items-center gap-2 mb-8">
-        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
           <Icon name="Shuffle" size={16} /> {drawing ? "抽牌中…" : (myNumber !== null ? "已抽過（本輪只能抽一次）" : "抽情境牌")}
         </button>
         {!currentCard && <span className="text-xs" style={{ color: COLORS.creamDim }}>指揮官抽出任務卡後即可使用</span>}
+        {currentCard && poolSize === 0 && <span className="text-xs" style={{ color: COLORS.cardEdge }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
         {noneLeft && <span className="text-xs" style={{ color: COLORS.cardEdge }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
         {failed && <span className="text-xs" style={{ color: COLORS.cardEdge }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
         {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
@@ -997,6 +1046,16 @@ function App() {
   /* 連續操作時會有多個寫入同時在路上。較早發出、較晚回來的那個若把結果套回畫面，
      就會把使用者已經前進的關卡拉回去。只有最新一次寫入有資格更新畫面。 */
   const writeSeqRef = useRef(0);
+
+  /* 而且同一台裝置連續發出的寫入，也不能任其並行：網路抖動會讓較晚發出的先抵達、
+     較早發出的後抵達，伺服器最後就停在舊的值上（指揮官快速換關卡時會整個退回去）。
+     這裡把本機的寫入串成一條佇列，確保抵達順序等於操作順序。 */
+  const writeChainRef = useRef(Promise.resolve());
+  const enqueueWrite = useCallback((fn) => {
+    const run = writeChainRef.current.then(fn, fn);
+    writeChainRef.current = run.then(() => {}, () => {});
+    return run;
+  }, []);
   const beginWrite = useCallback(() => { writingRef.current += 1; }, []);
   const endWrite = useCallback(() => {
     writingRef.current = Math.max(0, writingRef.current - 1);
@@ -1017,11 +1076,13 @@ function App() {
      否則指揮官那份過期快照會把大家剛填好的資料整包抹掉。
      只有明確要清空該輪資料的動作（抽新任務卡、重置、換活動）才傳 resetPlayerData。 */
   const pushState = useCallback(async (next, opts = {}) => {
+    // 蓋上指揮官的時鐘，讓玩家能校正自己的倒數（見上方 noteHostTime）
+    if (role === "host") next = { ...next, hostTime: Date.now() };
     setState(next);
     if (!syncEnabled) return false;
     const seq = ++writeSeqRef.current;
     beginWrite();
-    const res = await kvMutate(activeRoom, "state", (remote) => {
+    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => {
       if (!remote || opts.resetPlayerData) return next;
       const base = normalizeState(remote);
       return {
@@ -1029,22 +1090,32 @@ function App() {
         takenNumbers: base.takenNumbers,
         ttol: { ...(next.ttol || EMPTY_STATE.ttol), profiles: base.ttol.profiles, guesses: base.ttol.guesses },
       };
-    });
+    }));
     endWrite();
     setSyncOk(res.ok);
     if (res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
     return res.ok;
-  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+  }, [role, activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
 
-  const pushCards = useCallback(async (next) => {
+  /* 編輯任務卡時每個按鍵都會呼叫這裡。逐鍵送出等於一個字一次 PUT，
+     所以打字類的異動傳 debounce，停止輸入 600ms 後才真的寫出去。 */
+  const cardsTimerRef = useRef(null);
+  const pushCards = useCallback(async (next, opts = {}) => {
     setCards(next);
     if (!syncEnabled) return false;
-    beginWrite();
-    const ok = await kvSet(activeRoom, "cards", next);
-    endWrite();
-    setSyncOk(ok);
-    return ok;
+    const write = async () => {
+      beginWrite();
+      const ok = await kvSet(activeRoom, "cards", next);
+      endWrite();
+      setSyncOk(ok);
+      return ok;
+    };
+    if (cardsTimerRef.current) { clearTimeout(cardsTimerRef.current); cardsTimerRef.current = null; }
+    if (!opts.debounce) return write();
+    cardsTimerRef.current = setTimeout(() => { cardsTimerRef.current = null; write(); }, 600);
+    return true;
   }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+  useEffect(() => () => { if (cardsTimerRef.current) clearTimeout(cardsTimerRef.current); }, []);
 
   /* 玩家端的寫入：mutator 只能改自己那一筆，其餘欄位原封不動沿用遠端最新值。
      verify 負責確認寫入沒有被同時送出的其他人蓋掉，被蓋掉就重讀重試。 */
@@ -1056,14 +1127,14 @@ function App() {
     }
     const seq = ++writeSeqRef.current;
     beginWrite();
-    const res = await kvMutate(activeRoom, "state", (remote) => mutator(normalizeState(remote || stateRef.current)), { verify, spread: 300 });
+    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => mutator(normalizeState(remote || stateRef.current)), { verify, spread: 300 }));
     endWrite();
     setSyncOk(res.ok);
     // 只有確認寫入成功才更新畫面。失敗時維持原狀並回報，讓使用者知道要再按一次，
     // 而不是看到一個伺服器上根本不存在的結果。
     if (res.ok && res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
     return res;
-  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+  }, [activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
 
   /* 我這台裝置送出過的東西。寫入成功「當下」不代表就安全了——另一個讀取時間較早的人
      隨後把整包狀態寫回去，一樣會把我的資料蓋掉。所以每次輪詢都拿這份記錄跟遠端對照，
@@ -1104,8 +1175,9 @@ function App() {
     return changed ? next : null;
   }, []);
 
-  /* 認領一張情境牌。每次重試都會依最新的遠端資料重新挑號碼，所以不會挑到別人剛拿走的。 */
-  const claimScenario = useCallback(async (groupKey, poolSize) => {
+  /* 認領一張情境牌。pool 是「這張卡上真的填了內容的情境號碼」，
+     每次重試都會依最新的遠端資料重新挑，所以不會挑到別人剛拿走的、也不會抽到空白情境。 */
+  const claimScenario = useCallback(async (groupKey, pool) => {
     const myId = myIdRef.current;
     let picked = null, full = false;
     const res = await mutatePlayerData(
@@ -1113,8 +1185,7 @@ function App() {
         const taken = base.takenNumbers[groupKey] || {};
         const mine = Object.keys(taken).find((n) => taken[n] === myId);
         if (mine) { picked = Number(mine); full = false; return null; } // 已經抽過，不重複寫入
-        const available = [];
-        for (let n = 1; n <= poolSize; n++) if (taken[n] === undefined) available.push(n);
+        const available = pool.filter((n) => taken[n] === undefined);
         if (available.length === 0) { picked = null; full = true; return null; }
         full = false;
         picked = available[Math.floor(Math.random() * available.length)];
@@ -1200,6 +1271,7 @@ function App() {
       if (writingRef.current > 0 || Date.now() < settleUntilRef.current) return;
       if (remoteCards) setCards(remoteCards);
       if (remoteState) {
+        if (role === "player") noteHostTime(remoteState.hostTime);
         const base = normalizeState(remoteState);
         // 自己送出過、但遠端已經看不到的東西，就地補回來（畫面先顯示，背景再寫回伺服器）。
         const patched = role === "player" ? repairPatch(base) : null;
@@ -1272,6 +1344,15 @@ function App() {
             <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>皮克敏！使出 戲胞分裂</h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {role === "host" && activity && !editingStory && !isFirstStage(activity, state.stage) && (
+              <button
+                onClick={() => pushState({ ...state, stage: prevStage(activity, state.stage) })}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
+                style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}
+              >
+                <Icon name="ArrowLeft" size={13} /> 上一關
+              </button>
+            )}
             {role === "host" && activity && !editingStory && (
               <button onClick={() => setEditingStory(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}>
                 <Icon name="BookOpen" size={13} /> 編輯故事
@@ -1329,6 +1410,16 @@ function App() {
           />
         ) : (
           <>
+            {role === "host" && roomRevealStages.includes(state.stage) && (
+              <RoomCodePanel
+                room={room}
+                roomReal={roomReal}
+                totalGroups={state.totalGroups}
+                defaultOpen={roomRevealStages[0] === state.stage}
+                onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })}
+              />
+            )}
+
             {state.stage === "intro" && (
               <StoryScreen text={state.storyText[activity].intro || STORY_DEFAULT[activity].intro} chapter="序章" buttonLabel="開始第一關：皮克敏迫降" showButton={role === "host"} onNext={() => pushState({ ...state, stage: nextStage(activity, "intro") })} />
             )}
@@ -1342,11 +1433,7 @@ function App() {
                 buttonLabel={state.stage === "transition2" ? "開始：偽裝洞穴" : (activity === "training" ? "開始：情報交換" : "開始：偽裝洞穴")}
                 showButton={role === "host"}
                 onNext={() => pushState({ ...state, stage: nextStage(activity, state.stage) })}
-              >
-                {role === "host" && roomRevealStages[0] === state.stage && (
-                  <RoomCodePanel room={room} roomReal={roomReal} totalGroups={state.totalGroups} onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })} />
-                )}
-              </StoryScreen>
+              />
             )}
 
             {state.stage === "ttol" && role === "host" && <TtolHostView state={state} pushState={pushState} />}

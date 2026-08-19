@@ -6,7 +6,7 @@ const http = require("http");
 const path = require("path");
 const { chromium } = require("playwright");
 
-const NM = path.join(__dirname, "node_modules");
+const NM = path.join(__dirname, "..", "node_modules");
 const LOCAL = {
   "react/18.2.0/umd/react.production.min.js": path.join(NM, "react/umd/react.production.min.js"),
   "react-dom/18.2.0/umd/react-dom.production.min.js": path.join(NM, "react-dom/umd/react-dom.production.min.js"),
@@ -20,7 +20,7 @@ const lag = () => new Promise((r) => setTimeout(r, LATENCY * (0.6 + Math.random(
 function makeStore() {
   const buckets = new Map();
   let n = 0;
-  const stats = { get: 0, put: 0 };
+  const stats = { get: 0, put: 0, putByKey: {} };
   return {
     stats,
     read(bucket, key) {
@@ -45,6 +45,7 @@ function makeStore() {
       const b = buckets.get(bucket);
       if (method === "PUT") {
         stats.put++;
+        stats.putByKey[key] = (stats.putByKey[key] || 0) + 1;
         const body = request.postData();
         if (process.env.TRACE && key === "state") {
           let s = {};
@@ -77,8 +78,20 @@ async function makeWorld(gameFile) {
   const store = makeStore();
   const contexts = [];
 
-  async function device(label) {
+  async function device(label, opts = {}) {
     const ctx = await browser.newContext();
+    // 模擬這台裝置的系統時鐘偏差（Date.now 整體平移，但仍持續前進）
+    if (opts.clockSkewMs) {
+      await ctx.addInitScript(`(() => {
+        const skew = ${opts.clockSkewMs};
+        const RealDate = Date;
+        const D = function (...a) { return a.length ? new RealDate(...a) : new RealDate(RealDate.now() + skew); };
+        D.prototype = RealDate.prototype;
+        D.now = () => RealDate.now() + skew;
+        D.parse = RealDate.parse; D.UTC = RealDate.UTC;
+        window.Date = D;
+      })()`);
+    }
     contexts.push(ctx);
     await ctx.route("**://kvdb.io/**", (route, req) => store.handle(route, req));
     await ctx.route("**://cdnjs.cloudflare.com/**", (route, req) => {
