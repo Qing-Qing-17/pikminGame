@@ -70,6 +70,12 @@ async function makeWorld(gameFile, opts = {}) {
         stats.writesByKey[key] = (stats.writesByKey[key] || 0) + 1;
       }
       if (dopts.blockDb) return route.abort("connectionfailed");
+      // 模擬 Firebase 規則拒絕存取（鎖定模式，或測試模式過期）
+      if (dopts.denyDb) return route.fulfill({
+        status: 401, contentType: "application/json",
+        headers: { "Access-Control-Allow-Origin": "*" },
+        body: JSON.stringify({ error: "Permission denied" }),
+      });
       await lag();
       return route.continue();
     });

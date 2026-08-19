@@ -15,7 +15,8 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.click("text=開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
     await host.waitForSelector("text=皮克敏加入");
-    ok(await host.isVisible("text=目前連不上同步伺服器"), "有明確警告房間代碼無法給人加入");
+    const t = await host.textContent("#root");
+    ok(/多人連線無法使用/.test(t) && /還沒有填入 Firebase 資料庫網址/.test(t), "警告中明確說出是「還沒填資料庫網址」");
 
     await host.click("text=我是皮克敏（輸入房間代碼加入）");
     await host.fill('input[placeholder="房間代碼"]', "ABC123");
