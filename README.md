@@ -26,14 +26,12 @@ npm run build      # 產出 dist/index.html
 
 ## 發佈到 GitHub Pages
 
-`.github/workflows/deploy.yml` 會在推上 `main` 時自動建置並發佈 `dist/`。
-第一次使用需要在 GitHub 上開啟 Pages（只需做一次）：
+`.github/workflows/deploy.yml` 會在推上 `main` 時自動建置並發佈 `dist/`，
+網址是 `https://<帳號>.github.io/pikminGame/`。
 
-1. 進入 repo 的 **Settings → Pages**
-2. **Build and deployment → Source** 選 **GitHub Actions**
-
-之後每次推上 `main` 就會自動更新，網址是
-`https://<帳號>.github.io/pikminGame/`。
+流程裡的 `actions/configure-pages` 帶了 `enablement: true`，Pages 沒開啟時它會直接
+用 API 開起來，所以**不需要手動到 Settings 設定**。若那一步失敗（例如組織政策擋住），
+再到 **Settings → Pages → Build and deployment → Source** 選 **GitHub Actions** 即可。
 
 發佈的是建置版，不是根目錄的原始碼——原始碼要在瀏覽器裡即時編譯 JSX，
 現場用手機開會明顯變慢，而且一旦連不到 cdnjs 就整頁打不開。

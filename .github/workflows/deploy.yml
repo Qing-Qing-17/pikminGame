@@ -26,6 +26,11 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
+      # enablement: true 會在 Pages 還沒開啟時直接用 API 幫忙開起來，
+      # 這樣就不必到 Settings → Pages 手動設定（手機上很難操作那個頁面）。
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
