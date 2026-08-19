@@ -1,0 +1,53 @@
+# 把建置版（dist/index.html）發佈到 GitHub Pages。
+# 部署的是預先編譯、不依賴任何 CDN 的版本，不是根目錄那份原始碼——
+# 原始碼要在瀏覽器裡即時編譯 JSX，現場用手機開會明顯變慢。
+name: 部署到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 也可以在 Actions 頁面手動執行（合併到 main 之前想先試看看時用）
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署；正在進行的不中斷，讓它完成
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # playwright 只有測試才用得到，CI 建置不需要下載瀏覽器（會多花好幾分鐘）
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: 確認成品沒有殘留 CDN 依賴
+        run: |
+          if grep -qE 'cdnjs\.cloudflare\.com|cdn\.tailwindcss\.com' dist/index.html; then
+            echo "成品仍連到 CDN，建置有問題"; exit 1
+          fi
+          echo "成品大小：$(du -h dist/index.html | cut -f1)"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

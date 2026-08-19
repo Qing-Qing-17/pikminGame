@@ -59,6 +59,8 @@ out = put(out, "<title>", () => "<!-- 由 tools/build.js 產生，請勿直接�
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(OUT, out);
+// GitHub Pages 預設會用 Jekyll 處理靜態檔，這個空檔案讓它原封不動地送出去
+fs.writeFileSync(path.join(OUT_DIR, ".nojekyll"), "");
 fs.rmSync(tmp, { recursive: true, force: true });
 
 const kb = (n) => (n / 1024).toFixed(0) + " KB";

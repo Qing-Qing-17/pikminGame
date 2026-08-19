@@ -24,6 +24,20 @@ npm run build      # 產出 dist/index.html
 不依賴任何 CDN，載入也快得多（可互動時間約 2.1s → 1.4s）。部署時上傳這一個檔案即可。
 唯一的外部資源是 Google Fonts；被擋掉時會退回系統字型，不影響功能。
 
+## 發佈到 GitHub Pages
+
+`.github/workflows/deploy.yml` 會在推上 `main` 時自動建置並發佈 `dist/`。
+第一次使用需要在 GitHub 上開啟 Pages（只需做一次）：
+
+1. 進入 repo 的 **Settings → Pages**
+2. **Build and deployment → Source** 選 **GitHub Actions**
+
+之後每次推上 `main` 就會自動更新，網址是
+`https://<帳號>.github.io/pikminGame/`。
+
+發佈的是建置版，不是根目錄的原始碼——原始碼要在瀏覽器裡即時編譯 JSX，
+現場用手機開會明顯變慢，而且一旦連不到 cdnjs 就整頁打不開。
+
 ## 多人同步
 
 狀態存在 [kvdb.io](https://kvdb.io) 的一個 bucket，房間代碼就是 bucket 代號，
