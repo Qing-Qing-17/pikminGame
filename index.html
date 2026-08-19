@@ -16,8 +16,27 @@
 </head>
 <body>
 <div id="root"></div>
+<noscript><div style="padding:24px;font-family:sans-serif">這個頁面需要 JavaScript 才能執行。</div></noscript>
+<script>
+  /* 四支外部腳本任何一支載入失敗，原本就是一片空白。這裡在啟動前先確認相依套件都在，
+     不在的話至少讓現場看得懂發生什麼事、該怎麼辦。 */
+  window.addEventListener("DOMContentLoaded", function () {
+    var missing = [];
+    if (typeof React === "undefined") missing.push("React");
+    if (typeof ReactDOM === "undefined") missing.push("ReactDOM");
+    if (typeof Babel === "undefined") missing.push("Babel");
+    if (!missing.length) return;
+    document.getElementById("root").innerHTML =
+      '<div style="max-width:26rem;margin:15vh auto;padding:24px;text-align:center;font-family:sans-serif;color:#1B3A4B">' +
+      '<div style="font-size:18px;font-weight:800;margin-bottom:8px">載入失敗</div>' +
+      '<p style="font-size:13px;line-height:1.8;color:#456">這個頁面需要從網路載入 ' + missing.join("、") +
+      '。請確認網路連線後重新整理；若現場網路會擋外部網站，請改用離線版（見 README 的建置說明）。</p>' +
+      '<button onclick="location.reload()" style="margin-top:12px;padding:10px 20px;border-radius:999px;border:0;background:#FFC93C;font-weight:700">重新載入</button>' +
+      '</div>';
+  });
+</script>
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 const ICON_MAP = {
   Shuffle: "🔀", RotateCcw: "🔄", Settings2: "⚙️", Plus: "➕", Trash2: "🗑️",
@@ -26,11 +45,21 @@ const ICON_MAP = {
   ChevronRight: "→", Dices: "🎲", BookOpen: "📖", KeyRound: "🔑", Copy: "📋",
   Sparkles: "✨", GraduationCap: "🎓",
 };
-function Icon({ name, size = 16, className = "", style = {} }) {
+/* 彩色 emoji 是自帶顏色的字形，CSS 的 color 對它們完全沒有作用；
+   只有這兩個純文字箭頭吃得到。列出來是為了讓「這裡設了 color 卻沒效果」不再誤導人。 */
+const MONOCHROME_ICONS = new Set(["ArrowLeft", "ChevronRight"]);
+
+function Icon({ name, size = 16, className = "", style = {}, label }) {
+  const { color, ...rest } = style;
+  const applied = MONOCHROME_ICONS.has(name) ? { color, ...rest } : rest;
   return (
     <span
       className={className}
-      style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle", ...style }}
+      // 圖示多半只是裝飾，讓螢幕閱讀器略過；真的帶有意義時才給它一個名稱
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle", ...applied }}
     >
       {ICON_MAP[name] || "•"}
     </span>
@@ -40,10 +69,22 @@ function Icon({ name, size = 16, className = "", style = {} }) {
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap');`;
 
+/* 命名依「用途 + 實際顏色」，不再出現 cream 其實是深藍、violet 其實是藍色這種誤導。
+   文字色都以 WCAG AA（一般文字 4.5:1）對 #EAF6FF 與 #FFFFFF 兩種底色驗算過；
+   xxxFill 是拿來當底色的版本，與其上的文字另外配對驗算。 */
 const COLORS = {
-  bg: "#EAF6FF", bg2: "#FFFFFF", card: "#FFFFFF", cardEdge: "#E63946",
-  gold: "#FFC93C", goldDim: "#B8860B", cream: "#1B3A4B", creamDim: "#5A7A94", violet: "#457B9D",
-  pink: "#F25C9A",
+  bg: "#EAF6FF",        // 頁面底色（淺藍）
+  panel: "#FFFFFF",     // 卡片／面板底色
+  cardFace: "#FFFFFF",  // 翻牌正面
+  ink: "#1B3A4B",       // 主要文字（深藍）        對底色 10.91
+  inkSoft: "#55738B",   // 次要文字（灰藍）        對底色 4.54
+  amber: "#906909",     // 強調文字／數字（深金）  對底色 4.54
+  amberFill: "#B8860B", // 深金底（配 #1A1420，5.54）
+  red: "#CF333F",       // 警告文字與邊框；當底色時配白字（5.00）
+  yellow: "#FFC93C",    // 主要按鈕底色（配 #241A14，11.09）
+  blue: "#457B9D",      // 邊框（非文字，門檻 3.0）
+  pink: "#B84675",      // 粉色文字／邊框          對底色 4.59
+  pinkFill: "#F25C9A",  // 反白列底色（配 #241A14，5.49）
 };
 
 const DEFAULT_CARDS = [
@@ -82,19 +123,123 @@ const STORY_DEFAULT = {
   },
 };
 
+const DEFAULT_TIMER = 180;
+
 const EMPTY_STATE = {
+  hostTime: 0,    // 指揮官寫入當下的時鐘，用來校正各裝置的倒數
   activity: null, // 'star' | 'training'
   stage: "intro",
-  cellTarget: 6, timerConfig: 180, timerEndsAt: null, timerRunning: false,
+  cellTarget: 6, timerConfig: DEFAULT_TIMER, timerEndsAt: null, timerRunning: false,
   totalGroups: 6,
   storyText: { star: { intro: "", transition: "" }, training: { intro: "", transition1: "", transition2: "" } },
   cardId: null, cardRevealed: false, takenNumbers: {},
   ttol: { phase: "writing", profiles: {}, guesses: {} },
-  ts: 0,
 };
+
+/* takenNumbers 的格式是 { 小隊: { 情境號碼: 抽走它的玩家 id } }。
+   記名而不是只記號碼，才能判斷「這張是不是我抽的」——重整頁面後可以還原自己的號碼，
+   也才能在寫入後驗證自己的認領有沒有被別人蓋掉。舊格式是純號碼陣列，這裡一併相容。 */
+function normalizeTaken(taken) {
+  const out = {};
+  Object.keys(taken || {}).forEach((g) => {
+    const v = taken[g];
+    if (Array.isArray(v)) { out[g] = {}; v.forEach((n) => { out[g][n] = "?"; }); }
+    else if (v && typeof v === "object") { out[g] = { ...v }; }
+  });
+  return out;
+}
+
+/* 遠端讀回來的 state 一律補齊結構再用。少了這層，只要伺服器上那包 JSON 是舊版或不完整，
+   畫面就會在存取 storyText[activity] / ttol.profiles 時整頁拋錯。 */
+function normalizeState(raw) {
+  if (!raw || typeof raw !== "object") return { ...EMPTY_STATE };
+  const story = raw.storyText || {};
+  const ttol = raw.ttol || {};
+  return {
+    ...EMPTY_STATE,
+    ...raw,
+    storyText: {
+      star: { ...EMPTY_STATE.storyText.star, ...(story.star || {}) },
+      training: { ...EMPTY_STATE.storyText.training, ...(story.training || {}) },
+    },
+    takenNumbers: normalizeTaken(raw.takenNumbers),
+    ttol: {
+      phase: ttol.phase === "guessing" ? "guessing" : "writing",
+      profiles: ttol.profiles || {},
+      guesses: ttol.guesses || {},
+    },
+  };
+}
+
+/* 玩家身分要能撐過重新整理，否則重整後會變成一個全新的人：情報要重填、
+   舊的那筆還會留在名單裡變成幽靈隊員，抽過的情境牌也會被允許再抽一次。 */
+function loadOrCreateId() {
+  const KEY = "pikmin.playerId";
+  const fresh = () => `p${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved) return saved;
+    const id = fresh();
+    localStorage.setItem(KEY, id);
+    return id;
+  } catch (e) { return fresh(); }
+}
+function loadGroup(room) {
+  try { const g = localStorage.getItem(`pikmin.group.${room}`); return g ? Number(g) : null; } catch (e) { return null; }
+}
+function saveGroup(room, group) {
+  try { localStorage.setItem(`pikmin.group.${room}`, String(group)); } catch (e) { /* 無痕模式等情況下略過 */ }
+}
+
+/* 哪一則是假情報，只留在本人的裝置上，絕不寫進共用狀態。
+   共用狀態是每個玩家的瀏覽器每隔一兩秒就會完整抓下來的東西，
+   把答案放進去等於公告給全場。改由本人的裝置擔任裁判：別人送出「我猜第幾則」，
+   本人的裝置比對後才把判定結果寫回去。 */
+function loadLie(room) {
+  try { const v = localStorage.getItem(`pikmin.lie.${room}`); return v === null ? null : Number(v); } catch (e) { return null; }
+}
+function saveLie(room, idx) {
+  try { localStorage.setItem(`pikmin.lie.${room}`, String(idx)); } catch (e) { /* 略過 */ }
+}
+
+/* 房間沒有任何存取控制：知道代碼的人都能寫、也能清空。真正的權限控管需要後端，
+   kvdb 只是一個公開的鍵值儲存。在這個限制下能做的是讓破壞可以復原——
+   指揮官每次寫入都在本機留一份備份，一旦偵測到房間資料被清掉就自動還原。 */
+function saveBackup(room, state) {
+  try { localStorage.setItem(`pikmin.backup.${room}`, JSON.stringify(state)); } catch (e) { /* 略過 */ }
+}
+function loadBackup(room) {
+  try { const raw = localStorage.getItem(`pikmin.backup.${room}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+
+/* 記住「已經加入哪個房間」，手機鎖屏、切換 App 或不小心重整之後才不必重新輸入代碼。 */
+const SESSION_KEY = "pikmin.session";
+function loadSession() {
+  try { const raw = localStorage.getItem(SESSION_KEY); const s = raw ? JSON.parse(raw) : null; return s && s.room ? s : null; } catch (e) { return null; }
+}
+function saveSession(session) {
+  try { session ? localStorage.setItem(SESSION_KEY, JSON.stringify(session)) : localStorage.removeItem(SESSION_KEY); } catch (e) { /* 略過 */ }
+}
 
 /* ---------- kvdb.io 同步 ---------- */
 const KV_ROOT = "https://kvdb.io";
+
+/* 倒數是用「結束時刻」在各裝置本地換算的，所以每支手機的系統時鐘一有偏差，看到的剩餘
+   秒數就會不一樣（差幾分鐘的手機並不罕見）。kvdb 回應的 Date 標頭不在 CORS 安全清單內、
+   跨網域讀不到，所以改以指揮官的時鐘為共同基準：指揮官每次寫入都蓋上自己的時戳，
+   玩家用它推算偏移量。取樣一定會低估——狀態是先被寫入、隔一個輪詢週期才被讀到——
+   所以取歷次觀察到的最大值最接近真值，誤差因此收斂到一個輪詢週期以內，
+   而不是取決於手機時鐘差多少。 */
+let hostClockOffset = 0;
+let haveHostSample = false;
+let lastHostStamp = 0;
+function noteHostTime(stamp) {
+  if (!stamp || stamp === lastHostStamp) return;
+  lastHostStamp = stamp;
+  const candidate = stamp - Date.now();
+  if (!haveHostSample || candidate > hostClockOffset) { hostClockOffset = candidate; haveHostSample = true; }
+}
+function now() { return Date.now() + hostClockOffset; }
 async function createBucket(attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
@@ -119,26 +264,55 @@ async function probeReachable() {
   }
 }
 
-async function kvGet(bucket, key, attempts = 3) {
+/* 回傳 { status, value }：'ok' 讀到了、'missing' 伺服器明確說沒有、'error' 讀不到。
+   要分辨後兩者，才能在房間資料真的被清空時還原，而不會因為一次連線失敗就誤判。 */
+async function kvRead(bucket, key, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await fetch(`${KV_ROOT}/${bucket}/${key}`);
-      if (res.status === 404) return null;
+      if (res.status === 404) return { status: "missing", value: null };
       if (!res.ok) throw new Error("bad status");
       const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      return { status: "ok", value: text ? JSON.parse(text) : null };
     } catch (e) {
-      if (i === attempts - 1) return null;
+      if (i === attempts - 1) return { status: "error", value: null };
       await new Promise((r) => setTimeout(r, 300));
     }
   }
-  return null;
+  return { status: "error", value: null };
+}
+async function kvGet(bucket, key, attempts = 3) {
+  return (await kvRead(bucket, key, attempts)).value;
 }
 async function kvSet(bucket, key, value) {
   try {
     const res = await fetch(`${KV_ROOT}/${bucket}/${key}`, { method: "PUT", body: JSON.stringify(value) });
     return res.ok;
   } catch (e) { return false; }
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* kvdb 只有 GET / PUT，沒有原子操作，所以用「讀最新 → 套用自己的異動 → 寫回 → 讀回驗證」
+   的樂觀併發迴圈取代直接整包覆寫。mutator 收到的是遠端最新值，回傳 null 表示不需要寫入。
+   verify 用來確認自己的異動沒有被別人的寫入蓋掉，被蓋掉就重跑一次（會重新讀最新值）。 */
+async function kvMutate(bucket, key, mutator, { attempts = 5, verify, spread = 0 } = {}) {
+  // 整隊在同一秒按下按鈕時，先各自隨機錯開一點再開始，避免第一輪就全部撞在一起。
+  if (spread) await sleep(Math.floor(Math.random() * spread));
+  for (let i = 0; i < attempts; i++) {
+    const remote = await kvGet(bucket, key);
+    const next = mutator(remote);
+    if (next === null || next === undefined) return { ok: true, value: remote, skipped: true };
+    if (await kvSet(bucket, key, next)) {
+      if (!verify) return { ok: true, value: next };
+      const after = await kvGet(bucket, key);
+      if (after && verify(after)) return { ok: true, value: after };
+    }
+    /* 指數退避＋大幅隨機抖動。起始值要大於一次「讀→寫→驗證」的往返時間，
+       否則重試會落在別人的臨界區裡，一撞再撞。 */
+    if (i < attempts - 1) await sleep(Math.floor(Math.min(250 * Math.pow(1.6, i), 1500) * (0.5 + Math.random())));
+  }
+  // 重試用盡：絕對不要回傳自己那份沒寫進去的值，否則畫面會顯示成功、伺服器上卻沒有。
+  return { ok: false, value: null };
 }
 
 function formatTime(totalSeconds) {
@@ -153,7 +327,7 @@ function useRemainingSeconds(state) {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, [state.timerRunning]);
-  if (state.timerRunning && state.timerEndsAt) return Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000));
+  if (state.timerRunning && state.timerEndsAt) return Math.max(0, Math.round((state.timerEndsAt - now()) / 1000));
   return state.timerConfig;
 }
 function nextStage(activity, current) {
@@ -161,19 +335,25 @@ function nextStage(activity, current) {
   const idx = flow.indexOf(current);
   return flow[Math.min(idx + 1, flow.length - 1)];
 }
+function prevStage(activity, current) {
+  const flow = STAGE_FLOW[activity];
+  const idx = flow.indexOf(current);
+  return flow[Math.max(idx - 1, 0)];
+}
+function isFirstStage(activity, current) { return STAGE_FLOW[activity].indexOf(current) <= 0; }
 
 /* ---------- 共用小元件 ---------- */
 function FlipCard({ label, faceLabel, revealed, children, accent, small }) {
   return (
     <div className="flex flex-col items-center gap-3 w-full">
-      <span className="text-xs tracking-[0.3em] uppercase text-center" style={{ color: COLORS.creamDim, fontFamily: "'Noto Sans TC', sans-serif" }}>{label}</span>
+      <span className="text-xs tracking-[0.3em] uppercase text-center" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Sans TC', sans-serif" }}>{label}</span>
       <div className={`relative w-full max-w-xs ${small ? "h-36" : "h-52"}`} style={{ perspective: "1200px" }}>
         <div className="absolute inset-0 transition-transform duration-700" style={{ transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d", transform: revealed ? "rotateY(0deg)" : "rotateY(180deg)" }}>
-          <div className="absolute inset-0 rounded-2xl flex items-center justify-center p-5 text-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", background: COLORS.card, border: `3px solid ${accent}`, boxShadow: "0 12px 30px rgba(0,0,0,0.45)" }}>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center p-5 text-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", background: COLORS.cardFace, border: `3px solid ${accent}`, boxShadow: "0 12px 30px rgba(0,0,0,0.45)" }}>
             {children}
           </div>
-          <div className="absolute inset-0 rounded-2xl flex items-center justify-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `repeating-linear-gradient(135deg, ${COLORS.violet} 0px, ${COLORS.violet} 10px, ${COLORS.bg} 10px, ${COLORS.bg} 20px)`, border: `3px solid ${COLORS.violet}`, boxShadow: "0 12px 30px rgba(0,0,0,0.3)" }}>
-            <span className="text-3xl font-black tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{faceLabel}</span>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `repeating-linear-gradient(135deg, ${COLORS.blue} 0px, ${COLORS.blue} 10px, ${COLORS.bg} 10px, ${COLORS.bg} 20px)`, border: `3px solid ${COLORS.blue}`, boxShadow: "0 12px 30px rgba(0,0,0,0.3)" }}>
+            <span className="text-3xl font-black tracking-widest" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{faceLabel}</span>
           </div>
         </div>
       </div>
@@ -187,9 +367,9 @@ function SituationList({ scenarios, activeNumber }) {
       {scenarios.map((s, i) => {
         const n = i + 1, active = activeNumber === n;
         return (
-          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all" style={{ background: active ? COLORS.pink : COLORS.bg2, border: `1px solid ${active ? COLORS.pink : COLORS.violet}` }}>
-            <span className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0" style={{ background: active ? "#241A14" : COLORS.goldDim, color: active ? COLORS.pink : "#1A1420" }}>{n}</span>
-            <span className="text-sm leading-snug" style={{ color: active ? "#241A14" : COLORS.creamDim, fontWeight: active ? 700 : 400 }}>{s || "（尚未填寫）"}</span>
+          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all" style={{ background: active ? COLORS.pinkFill : COLORS.panel, border: `1px solid ${active ? COLORS.pinkFill : COLORS.blue}` }}>
+            <span className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0" style={{ background: active ? "#241A14" : COLORS.amberFill, color: active ? COLORS.pinkFill : "#1A1420" }}>{n}</span>
+            <span className="text-sm leading-snug" style={{ color: active ? "#241A14" : COLORS.inkSoft, fontWeight: active ? 700 : 400 }}>{s || "（尚未填寫）"}</span>
           </div>
         );
       })}
@@ -200,12 +380,12 @@ function SituationList({ scenarios, activeNumber }) {
 function GroupSelectScreen({ totalGroups, onSelect }) {
   return (
     <div className="text-center py-8">
-      <Icon name="Users" size={26} style={{ color: COLORS.goldDim, margin: "0 auto 12px" }} />
-      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>選擇你的小隊</h2>
-      <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>請選擇你所屬的小隊（跟同小隊的夥伴選同一隊）</p>
+      <Icon name="Users" size={26} style={{ color: COLORS.amber, margin: "0 auto 12px" }} />
+      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>選擇你的小隊</h2>
+      <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>請選擇你所屬的小隊（跟同小隊的夥伴選同一隊）</p>
       <div className="grid grid-cols-3 gap-3 max-w-xs mx-auto">
         {Array.from({ length: totalGroups }, (_, i) => i + 1).map((n) => (
-          <button key={n} onClick={() => onSelect(n)} className="aspect-square rounded-2xl text-xl font-black flex items-center justify-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.pink}`, color: COLORS.pink }}>{n}</button>
+          <button key={n} onClick={() => onSelect(n)} aria-label={`我是第 ${n} 小隊`} className="aspect-square rounded-2xl text-xl font-black flex items-center justify-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.pink}`, color: COLORS.pink }}>{n}</button>
         ))}
       </div>
     </div>
@@ -215,12 +395,12 @@ function GroupSelectScreen({ totalGroups, onSelect }) {
 function StoryScreen({ text, chapter, buttonLabel, onNext, showButton, children }) {
   return (
     <div className="text-center py-6">
-      <Icon name="BookOpen" size={22} style={{ color: COLORS.goldDim, margin: "0 auto 12px" }} />
-      <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>{chapter}</div>
-      <p className="text-sm leading-loose max-w-md mx-auto mb-8" style={{ color: COLORS.creamDim, fontFamily: "'Noto Serif TC', serif" }}>{text}</p>
+      <Icon name="BookOpen" size={22} style={{ color: COLORS.amber, margin: "0 auto 12px" }} />
+      <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>{chapter}</div>
+      <p className="text-sm leading-loose max-w-md mx-auto mb-8" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Serif TC', serif" }}>{text}</p>
       {children}
       {showButton && (
-        <button onClick={onNext} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={onNext} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {buttonLabel} <Icon name="ChevronRight" size={16} />
         </button>
       )}
@@ -231,21 +411,21 @@ function StoryScreen({ text, chapter, buttonLabel, onNext, showButton, children 
 function ActivitySelectScreen({ onSelect }) {
   return (
     <div className="text-center py-8">
-      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>選擇今天要進行的活動</h2>
-      <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>不同活動有不同的故事與小遊戲流程</p>
+      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>選擇今天要進行的活動</h2>
+      <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>不同活動有不同的故事與小遊戲流程</p>
       <div className="flex flex-col gap-4 max-w-sm mx-auto">
-        <button onClick={() => onSelect("star")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.gold}` }}>
-          <Icon name="Sparkles" size={26} style={{ color: COLORS.goldDim }} />
+        <button onClick={() => onSelect("star")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.panel, border: `1px solid ${COLORS.yellow}` }}>
+          <Icon name="Sparkles" size={26} style={{ color: COLORS.amber }} />
           <div>
-            <div className="font-bold" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>星攻略</div>
-            <div className="text-xs" style={{ color: COLORS.creamDim }}>皮克敏迫降 → 偽裝洞穴（2 個小遊戲）</div>
+            <div className="font-bold" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>星攻略</div>
+            <div className="text-xs" style={{ color: COLORS.inkSoft }}>皮克敏迫降 → 偽裝洞穴（2 個小遊戲）</div>
           </div>
         </button>
-        <button onClick={() => onSelect("training")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.cardEdge}` }}>
-          <Icon name="GraduationCap" size={26} style={{ color: COLORS.cardEdge }} />
+        <button onClick={() => onSelect("training")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.panel, border: `1px solid ${COLORS.red}` }}>
+          <Icon name="GraduationCap" size={26} style={{ color: COLORS.red }} />
           <div>
-            <div className="font-bold" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>培訓</div>
-            <div className="text-xs" style={{ color: COLORS.creamDim }}>皮克敏迫降 → 情報交換 → 偽裝洞穴（3 個小遊戲）</div>
+            <div className="font-bold" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>培訓</div>
+            <div className="text-xs" style={{ color: COLORS.inkSoft }}>皮克敏迫降 → 情報交換 → 偽裝洞穴（3 個小遊戲）</div>
           </div>
         </button>
       </div>
@@ -273,51 +453,70 @@ function StoryEditor({ activity, storyText, onSave, onCancel }) {
     <div>
       {slots.map((k) => (
         <div key={k}>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>編輯{labels[k]}</div>
-          <textarea value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} rows={5} className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>編輯{labels[k]}</div>
+          <textarea value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} rows={5} className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
         </div>
       ))}
-      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.goldDim }}>✓ 已儲存，其他裝置重新整理後會看到最新內容。</div>}
-      {status === "fail" && <div className="text-xs mb-3" style={{ color: COLORS.cardEdge }}>✕ 儲存失敗，請檢查網路連線後再試一次。</div>}
+      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.amber }}>✓ 已儲存，其他裝置重新整理後會看到最新內容。</div>}
+      {status === "fail" && <div className="text-xs mb-3" style={{ color: COLORS.red }}>✕ 儲存失敗，請檢查網路連線後再試一次。</div>}
       <div className="flex gap-3">
-        <button onClick={handleSave} disabled={status === "saving"} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-60" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={handleSave} disabled={status === "saving"} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-60" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {status === "saving" ? "儲存中…" : "儲存"}
         </button>
-        <button onClick={onCancel} className="px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>返回</button>
+        <button onClick={onCancel} className="px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>返回</button>
       </div>
     </div>
   );
 }
 
-function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal }) {
+function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen = true }) {
   const [copied, setCopied] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   function copyCode() {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(room).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
     }
   }
+
+  /* 收合狀態：後面幾關仍然看得到代碼（遲到的人隨時能加入），但不佔滿畫面。 */
+  if (!open) {
+    return (
+      <div className="rounded-xl px-4 py-2 mb-5 flex items-center justify-center gap-3 flex-wrap" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+        <span className="text-xs" style={{ color: COLORS.inkSoft }}>房間代碼</span>
+        <span className="text-lg font-black tracking-widest" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
+        <button onClick={copyCode} disabled={!room} aria-label="複製房間代碼" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          {copied ? "已複製！" : "複製"}
+        </button>
+        <button onClick={() => setOpen(true)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>展開</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
-      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>
+    <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>
         <Icon name="KeyRound" size={13} /> 皮克敏加入
       </div>
       <div className="flex items-center justify-center gap-3 mb-4">
-        <span className="text-xs" style={{ color: COLORS.creamDim }}>總共分成幾小隊</span>
-        <button onClick={() => onChangeTotal(-1)} className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>−</button>
-        <span className="text-2xl font-black w-10" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
-        <button onClick={() => onChangeTotal(1)} className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>＋</button>
+        <span className="text-xs" style={{ color: COLORS.inkSoft }}>總共分成幾小隊</span>
+        <button onClick={() => onChangeTotal(-1)} aria-label="小隊數量減一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+        <span className="text-2xl font-black w-10" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
+        <button onClick={() => onChangeTotal(1)} aria-label="小隊數量加一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
       </div>
       {roomReal === false ? (
-        <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.cardEdge, background: "#EAF6FF", border: `1px solid ${COLORS.cardEdge}` }}>
+        <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.red, background: "#EAF6FF", border: `1px solid ${COLORS.red}` }}>
           ⚠ 目前連不上同步伺服器，下面這組代碼不是真的房間，皮克敏輸入也一定會顯示「代碼不正確」。請改用「測試：進入皮克敏介面」在同一台裝置測試，或部署成獨立 HTML 到 GitHub Pages 後在正式網址測試。
         </div>
       ) : (
-        <div className="text-xs mb-2" style={{ color: COLORS.creamDim }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
+        <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
       )}
-      <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.creamDim : COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
-      <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
-        <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
-      </button>
+      <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
+      <div className="flex items-center justify-center gap-3 flex-wrap">
+        <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
+        </button>
+        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>收合</button>}
+      </div>
     </div>
   );
 }
@@ -328,12 +527,12 @@ function PlayerJoinScreen({ onJoin, joining, error }) {
     <div className="min-h-screen flex items-center justify-center px-6" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
       <style>{FONT_IMPORT}</style>
       <div className="max-w-sm w-full text-center">
-        <Icon name="Drama" size={30} style={{ color: COLORS.cardEdge, margin: "0 auto 10px" }} />
-        <h1 className="text-2xl font-black mb-1" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>加入遊戲</h1>
-        <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>請輸入指揮官給你的房間代碼</p>
-        <input value={code} onChange={(e) => setCode(e.target.value.trim())} placeholder="房間代碼" className="w-full text-center text-xl tracking-widest px-4 py-3 rounded-xl outline-none mb-4" style={{ background: COLORS.bg2, color: COLORS.cream, border: `1px solid ${COLORS.gold}` }} />
-        {error && <div className="text-xs mb-3" style={{ color: COLORS.cardEdge }}>{error}</div>}
-        <button onClick={() => onJoin(code)} disabled={!code || joining} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <Icon name="Drama" size={30} style={{ color: COLORS.red, margin: "0 auto 10px" }} />
+        <h1 className="text-2xl font-black mb-1" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>加入遊戲</h1>
+        <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>請輸入指揮官給你的房間代碼</p>
+        <input value={code} onChange={(e) => setCode(e.target.value.trim())} aria-label="房間代碼" placeholder="房間代碼" className="w-full text-center text-xl tracking-widest px-4 py-3 rounded-xl outline-none mb-4" style={{ background: COLORS.panel, color: COLORS.ink, border: `1px solid ${COLORS.yellow}` }} />
+        {error && <div className="text-xs mb-3" style={{ color: COLORS.red }}>{error}</div>}
+        <button onClick={() => onJoin(code)} disabled={!code || joining} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {joining ? "加入中…" : "加入遊戲"}
         </button>
       </div>
@@ -361,12 +560,12 @@ function CellHostView({ state, pushState, activity }) {
   function adjustTarget(delta) { pushState({ ...state, cellTarget: Math.min(30, Math.max(2, state.cellTarget + delta)) }); }
   function randomizeTarget() { pushState({ ...state, cellTarget: 2 + Math.floor(Math.random() * 7) }); }
   function setPreset(seconds) { if (!state.timerRunning) pushState({ ...state, timerConfig: seconds, timerEndsAt: null }); }
-  function startTimer() { pushState({ ...state, timerRunning: true, timerEndsAt: Date.now() + (state.timerConfig || 1) * 1000 }); }
+  function startTimer() { pushState({ ...state, timerRunning: true, timerEndsAt: now() + (state.timerConfig || 1) * 1000 }); }
   function pauseTimer() {
-    const rem = state.timerEndsAt ? Math.max(0, Math.round((state.timerEndsAt - Date.now()) / 1000)) : state.timerConfig;
+    const rem = state.timerEndsAt ? Math.max(0, Math.round((state.timerEndsAt - now()) / 1000)) : state.timerConfig;
     pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: rem });
   }
-  function resetTimer() { pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: 180 }); }
+  function resetTimer() { pushState({ ...state, timerRunning: false, timerEndsAt: null, timerConfig: DEFAULT_TIMER }); }
 
   function handleFile(e) {
     const f = e.target.files && e.target.files[0];
@@ -385,68 +584,68 @@ function CellHostView({ state, pushState, activity }) {
 
   return (
     <div>
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         這個畫面只給指揮官自己看／投影用，不需要皮克敏連線。實際的集合行動在現場真人進行，這裡負責顯示目前需要的皮克敏數量、倒數計時與音樂。
       </p>
 
-      <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>目前需要集合的皮克敏數量</div>
+      <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的皮克敏數量</div>
         <div className="flex items-center justify-center gap-4 mb-3">
-          <button onClick={() => adjustTarget(-1)} className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>−</button>
-          <span className="text-6xl font-black w-24" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</span>
-          <button onClick={() => adjustTarget(1)} className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>＋</button>
+          <button onClick={() => adjustTarget(-1)} aria-label="集合人數減一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+          <span className="text-6xl font-black w-24" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</span>
+          <button onClick={() => adjustTarget(1)} aria-label="集合人數加一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
         </div>
-        <button onClick={randomizeTarget} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+        <button onClick={randomizeTarget} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: COLORS.red, color: "#FFFFFF" }}>
           <Icon name="Dices" size={13} /> 隨機變換人數
         </button>
       </div>
 
-      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
           <Icon name="TimerIcon" size={13} /> 遊戲倒數
         </div>
         <div className="text-center mb-3">
-          <span className="text-5xl font-black" style={{ color: timeUp ? COLORS.cardEdge : COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</span>
-          {timeUp && <div className="text-sm font-bold mt-1" style={{ color: COLORS.cardEdge }}>時間到！還沒集合成功的皮克敏出局</div>}
+          <span className="text-5xl font-black" style={{ color: timeUp ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</span>
+          {timeUp && <div className="text-sm font-bold mt-1" style={{ color: COLORS.red }}>時間到！還沒集合成功的皮克敏出局</div>}
         </div>
         {!state.timerRunning && (
           <div className="flex gap-2 justify-center mb-3 flex-wrap">
             {[60, 120, 180, 300].map((sec) => (
-              <button key={sec} onClick={() => setPreset(sec)} className="px-3 py-1 rounded-full text-xs" style={{ border: `1px solid ${COLORS.goldDim}`, color: COLORS.creamDim }}>{formatTime(sec)}</button>
+              <button key={sec} onClick={() => setPreset(sec)} className="px-3 py-1 rounded-full text-xs" style={{ border: `1px solid ${COLORS.amber}`, color: COLORS.inkSoft }}>{formatTime(sec)}</button>
             ))}
           </div>
         )}
         <div className="flex gap-3 justify-center">
           {!state.timerRunning ? (
-            <button onClick={startTimer} disabled={remaining <= 0} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+            <button onClick={startTimer} disabled={remaining <= 0} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
               <Icon name="Play" size={15} /> 開始
             </button>
           ) : (
-            <button onClick={pauseTimer} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+            <button onClick={pauseTimer} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
               <Icon name="Pause" size={15} /> 暫停
             </button>
           )}
-          <button onClick={resetTimer} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>
+          <button onClick={resetTimer} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
             <Icon name="RotateCcw" size={14} /> 重置
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
           <Icon name="Music" size={13} /> 背景音樂（僅播放於此裝置）
         </div>
         <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFile} />
         <audio ref={audioRef} onEnded={() => setPlaying(false)} />
         <div className="flex items-center gap-3 justify-center">
-          <button onClick={toggleMusic} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+          <button onClick={toggleMusic} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.red, color: "#FFFFFF" }}>
             {playing ? <Icon name="Pause" size={15} /> : <Icon name="Play" size={15} />} {audioName ? (playing ? "暫停" : "播放") : "選擇音樂檔案"}
           </button>
-          {audioName && <span className="text-xs truncate max-w-[140px]" style={{ color: COLORS.creamDim }}>{audioName}</span>}
+          {audioName && <span className="text-xs truncate max-w-[140px]" style={{ color: COLORS.inkSoft }}>{audioName}</span>}
         </div>
       </div>
 
-      <button onClick={() => pushState({ ...state, stage: nextStage(activity, "cell") })} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.goldDim }}>
+      <button onClick={() => pushState({ ...state, stage: nextStage(activity, "cell") })} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.amber }}>
         前往下一關 <Icon name="ChevronRight" size={16} />
       </button>
     </div>
@@ -457,36 +656,36 @@ function CellPlayerView({ state }) {
   const remaining = useRemainingSeconds(state);
   return (
     <div className="text-center py-4">
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>跟著現場指揮官一起完成「皮克敏迫降」——找到足夠的同伴集合成隊，別被掠食者抓走！</p>
-      <div className="rounded-2xl p-6 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>目前需要集合的數量</div>
-        <div className="text-7xl font-black mb-1" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
-        <div className="text-xs" style={{ color: COLORS.creamDim }}>快找到這個數量的同伴，聚在一起集合成隊！</div>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>跟著現場指揮官一起完成「皮克敏迫降」——找到足夠的同伴集合成隊，別被掠食者抓走！</p>
+      <div className="rounded-2xl p-6 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的數量</div>
+        <div className="text-7xl font-black mb-1" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
+        <div className="text-xs" style={{ color: COLORS.inkSoft }}>快找到這個數量的同伴，聚在一起集合成隊！</div>
       </div>
-      <div className="rounded-2xl p-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>
           <Icon name="TimerIcon" size={13} /> 剩餘時間
         </div>
-        <div className="text-5xl font-black" style={{ color: remaining <= 0 ? COLORS.cardEdge : COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
+        <div className="text-5xl font-black" style={{ color: remaining <= 0 ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
       </div>
     </div>
   );
 }
 
 /* ---------- 偽裝洞穴 ---------- */
-function GroupProgress({ takenNumbers, totalGroups }) {
+function GroupProgress({ takenNumbers, totalGroups, poolSize }) {
   const groups = Array.from({ length: totalGroups }, (_, i) => i + 1);
   return (
-    <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-      <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+    <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
         <Icon name="Users" size={13} /> 各小隊抽取進度（不會顯示是誰抽了哪個情境）
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {groups.map((g) => {
-          const count = (takenNumbers && takenNumbers[g] ? takenNumbers[g].length : 0);
+          const count = Object.keys((takenNumbers && takenNumbers[g]) || {}).length;
           return (
-            <div key={g} className="text-xs px-3 py-1.5 rounded-lg text-center" style={{ background: "#EAF6FF", color: COLORS.creamDim, border: `1px solid ${COLORS.goldDim}` }}>
-              第 {g} 小隊　<span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{count}/8</span>
+            <div key={g} className="text-xs px-3 py-1.5 rounded-lg text-center" style={{ background: "#EAF6FF", color: COLORS.inkSoft, border: `1px solid ${COLORS.amber}` }}>
+              第 {g} 小隊　<span style={{ color: COLORS.amber, fontWeight: 700 }}>{count}/{poolSize}</span>
             </div>
           );
         })}
@@ -497,82 +696,87 @@ function GroupProgress({ takenNumbers, totalGroups }) {
 
 function BarHostView({ cards, state, pushState, pushCards }) {
   const [mode, setMode] = useState("game");
+  const [flipping, setFlipping] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
+  const poolSize = currentCard ? currentCard.scenarios.filter((s) => s && s.trim()).length : 8;
 
-  function drawCard() {
+  /* 翻牌動畫是純視覺效果，用本地 flipping 做就好；原本為了動畫而連寫兩次遠端狀態，
+     等於多開一個會覆蓋玩家資料的時間窗。抽新卡本來就要清空該輪的認領，所以明確重置。 */
+  async function drawCard() {
     if (cards.length === 0) return;
     const pick = cards[Math.floor(Math.random() * cards.length)].id;
-    pushState({ ...state, cardId: pick, cardRevealed: false, takenNumbers: {} });
-    setTimeout(() => pushState({ ...state, cardId: pick, cardRevealed: true, takenNumbers: {}, ts: Date.now() }), 120);
+    setFlipping(true);
+    await pushState({ ...state, cardId: pick, cardRevealed: true, takenNumbers: {} }, { resetPlayerData: true });
+    setTimeout(() => setFlipping(false), 60);
   }
-  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {} }); }
+  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {} }, { resetPlayerData: true }); }
   function addCard() {
     const id = `c${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     pushCards([...cards, { id, line: "新的一句話", scenarios: Array(8).fill("") }]);
   }
-  function updateLine(idx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, line: val } : c))); }
-  function updateScenario(idx, sceneIdx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, scenarios: c.scenarios.map((s, j) => (j === sceneIdx ? val : s)) } : c))); }
+  function updateLine(idx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, line: val } : c)), { debounce: true }); }
+  function updateScenario(idx, sceneIdx, val) { pushCards(cards.map((c, i) => (i === idx ? { ...c, scenarios: c.scenarios.map((s, j) => (j === sceneIdx ? val : s)) } : c)), { debounce: true }); }
   function deleteCard(idx) { pushCards(cards.filter((_, i) => i !== idx)); }
 
   return (
     <>
       <div className="flex justify-end mb-4">
-        <button onClick={() => setMode(mode === "game" ? "edit" : "game")} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full transition-colors" style={{ color: mode === "edit" ? COLORS.bg : COLORS.creamDim, background: mode === "edit" ? COLORS.gold : "transparent", border: `1px solid ${mode === "edit" ? COLORS.gold : COLORS.violet}` }}>
+        <button onClick={() => setMode(mode === "game" ? "edit" : "game")} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full transition-colors" style={{ color: mode === "edit" ? COLORS.bg : COLORS.inkSoft, background: mode === "edit" ? COLORS.yellow : "transparent", border: `1px solid ${mode === "edit" ? COLORS.yellow : COLORS.blue}` }}>
           <Icon name="Settings2" size={14} /> {mode === "edit" ? "回到遊戲" : "編輯任務卡"}
         </button>
       </div>
 
       {mode === "game" ? (
         <>
-          <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
-            抽出任務卡後會列出全部 8 種偽裝情境，交給皮克敏在自己的頁面抽情境牌。目前任務卡池共 {cards.length} 張：{cards.map((c) => c.line).join("、") || "（無）"}
+          <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
+            抽出任務卡後會列出卡片上全部的偽裝情境，交給皮克敏在自己的頁面抽情境牌。目前任務卡池共 {cards.length} 張：{cards.map((c) => c.line).join("、") || "（無）"}
           </p>
 
           <div className="flex justify-center mb-6">
-            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed} accent={COLORS.cardEdge} small>
+            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed && !flipping} accent={COLORS.red} small>
               {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
             </FlipCard>
           </div>
 
           <div className="flex flex-wrap gap-3 justify-center mb-8">
-            <button onClick={drawCard} disabled={cards.length === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+            <button onClick={drawCard} disabled={cards.length === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.red, color: "#FFFFFF" }}>
               <Icon name="Shuffle" size={16} /> 抽任務卡
             </button>
-            <button onClick={resetDraw} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>
+            <button onClick={resetDraw} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
               <Icon name="RotateCcw" size={14} /> 重置
             </button>
           </div>
 
           {currentCard && (
             <div className="mb-8">
-              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 8 種，指揮官不會看到誰抽到哪個）</div>
+              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，指揮官不會看到誰抽到哪個）</div>
               <SituationList scenarios={currentCard.scenarios} activeNumber={null} />
             </div>
           )}
 
-          <GroupProgress takenNumbers={state.takenNumbers} totalGroups={state.totalGroups} />
+          <GroupProgress takenNumbers={state.takenNumbers} totalGroups={state.totalGroups} poolSize={poolSize} />
         </>
       ) : (
         <div className="space-y-5">
-          <p className="text-sm" style={{ color: COLORS.creamDim }}>每張任務卡包含皮克敏要喊出的暗號，以及對應情境牌 1–8 號的偽裝情境描述。編輯後會同步給皮克敏。</p>
+          <p className="text-sm" style={{ color: COLORS.inkSoft }}>每張任務卡包含皮克敏要喊出的暗號，以及對應情境牌 1–8 號的偽裝情境描述。編輯後會同步給皮克敏。</p>
           {cards.map((card, idx) => (
-            <div key={card.id} className="rounded-2xl p-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
+            <div key={card.id} className="rounded-2xl p-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs shrink-0" style={{ color: COLORS.creamDim }}>暗號</span>
-                <input value={card.line} onChange={(e) => updateLine(idx, e.target.value)} placeholder="皮克敏要喊出的暗號" className="flex-1 px-3 py-2 rounded-lg text-sm font-bold outline-none" style={{ background: COLORS.card, color: "#241A14", fontFamily: "'Noto Serif TC', serif" }} />
-                <button onClick={() => deleteCard(idx)} style={{ color: COLORS.cardEdge }}><Icon name="Trash2" size={18} /></button>
+                <span className="text-xs shrink-0" style={{ color: COLORS.inkSoft }}>暗號</span>
+                <input value={card.line} onChange={(e) => updateLine(idx, e.target.value)} aria-label="皮克敏要喊出的暗號" placeholder="皮克敏要喊出的暗號" className="flex-1 px-3 py-2 rounded-lg text-sm font-bold outline-none" style={{ background: COLORS.cardFace, color: "#241A14", fontFamily: "'Noto Serif TC', serif" }} />
+                <button onClick={() => deleteCard(idx)} aria-label="刪除這張任務卡" title="刪除這張任務卡" style={{ color: COLORS.red }}><Icon name="Trash2" size={18} /></button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {card.scenarios.map((s, si) => (
                   <div key={si} className="flex items-center gap-2">
-                    <span className="w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold shrink-0" style={{ background: COLORS.gold, color: "#241A14" }}>{si + 1}</span>
-                    <input value={s} onChange={(e) => updateScenario(idx, si, e.target.value)} placeholder={`第 ${si + 1} 號偽裝情境描述`} className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+                    <span className="w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold shrink-0" style={{ background: COLORS.yellow, color: "#241A14" }}>{si + 1}</span>
+                    <input value={s} onChange={(e) => updateScenario(idx, si, e.target.value)} aria-label={`第 ${si + 1} 號偽裝情境描述`} placeholder={`第 ${si + 1} 號偽裝情境描述`} className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
                   </div>
                 ))}
               </div>
             </div>
           ))}
-          <button onClick={addCard} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold w-full justify-center" style={{ border: `1px dashed ${COLORS.gold}`, color: COLORS.goldDim }}>
+          <button onClick={addCard} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold w-full justify-center" style={{ border: `1px dashed ${COLORS.yellow}`, color: COLORS.amber }}>
             <Icon name="Plus" size={16} /> 新增任務卡
           </button>
         </div>
@@ -581,59 +785,77 @@ function BarHostView({ cards, state, pushState, pushCards }) {
   );
 }
 
-function BarPlayerView({ cards, state, pushState, myGroup }) {
-  const [myNumber, setMyNumber] = useState(null);
-  const [myRevealed, setMyRevealed] = useState(false);
+function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
+  const [drawing, setDrawing] = useState(false);
   const [noneLeft, setNoneLeft] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [flipping, setFlipping] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
-  const groupKey = myGroup || "solo";
-  const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || [];
+  const groupKey = String(myGroup || "solo");
+  const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || {};
+  // 只把真的填了字的情境放進抽牌池，免得指揮官沒填完就有人抽到「（尚未填寫）」
+  const pool = useMemo(
+    () => (currentCard ? currentCard.scenarios.map((s, i) => (s && s.trim() ? i + 1 : 0)).filter(Boolean) : []),
+    [currentCard]
+  );
+  const poolSize = pool.length;
+
+  /* 自己的號碼是從共用狀態裡「哪一個號碼登記在我名下」推導出來的，不是本地暫存，
+     所以重新整理頁面之後仍然找得回來，也不會因此多抽走一個號碼。 */
+  const myNumber = useMemo(() => {
+    const hit = Object.keys(takenForGroup).find((n) => takenForGroup[n] === myId);
+    return hit ? Number(hit) : null;
+  }, [takenForGroup, myId]);
 
   useEffect(() => {
-    setMyNumber(null); setMyRevealed(false); setNoneLeft(false);
+    setNoneLeft(false); setFailed(false);
+    if (!state.cardId) return;
+    setFlipping(true);
+    const t = setTimeout(() => setFlipping(false), 80);
+    return () => clearTimeout(t);
   }, [state.cardId]);
 
   async function drawNumber() {
-    if (!currentCard || myNumber) return;
-    const available = [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => !takenForGroup.includes(n));
-    if (available.length === 0) { setNoneLeft(true); return; }
-    const pick = available[Math.floor(Math.random() * available.length)];
-    const nextTaken = { ...(state.takenNumbers || {}), [groupKey]: [...takenForGroup, pick] };
-    setMyRevealed(false);
-    await pushState({ ...state, takenNumbers: nextTaken });
-    setTimeout(() => { setMyNumber(pick); setMyRevealed(true); }, 120);
+    if (!currentCard || myNumber !== null || drawing) return;
+    setDrawing(true); setNoneLeft(false); setFailed(false);
+    const { full, failed: err } = await claimScenario(groupKey, pool);
+    setDrawing(false);
+    if (err) setFailed(true);
+    else if (full) setNoneLeft(true);
   }
 
   return (
     <>
       {myGroup && (
         <div className="text-center mb-4">
-          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: COLORS.bg2, color: COLORS.pink, border: `1px solid ${COLORS.pink}` }}>你的小隊：第 {myGroup} 小隊</span>
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: COLORS.panel, color: COLORS.pink, border: `1px solid ${COLORS.pink}` }}>你的小隊：第 {myGroup} 小隊</span>
         </div>
       )}
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         {currentCard ? "指揮官已抽出任務卡，換你抽情境牌——結果只有你看得到，別讓同小隊的人知道！" : "等待指揮官抽出任務卡…（畫面會自動同步，請稍候）"}
       </p>
 
       <div className="flex justify-center mb-6">
-        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed} accent={COLORS.cardEdge} small>
+        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed && !flipping} accent={COLORS.red} small>
           {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
         </FlipCard>
       </div>
 
       <div className="flex flex-col items-center gap-2 mb-8">
-        <button onClick={drawNumber} disabled={!currentCard || !!myNumber || noneLeft} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
-          <Icon name="Shuffle" size={16} /> {myNumber ? "已抽過（本輪只能抽一次）" : "抽情境牌"}
+        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          <Icon name="Shuffle" size={16} /> {drawing ? "抽牌中…" : (myNumber !== null ? "已抽過（本輪只能抽一次）" : "抽情境牌")}
         </button>
-        {!currentCard && <span className="text-xs" style={{ color: COLORS.creamDim }}>指揮官抽出任務卡後即可使用</span>}
-        {noneLeft && <span className="text-xs" style={{ color: COLORS.cardEdge }}>本小隊 8 種情境已經被抽完了</span>}
-        {myRevealed && <span className="text-3xl font-black mt-2" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
+        {!currentCard && <span className="text-xs" style={{ color: COLORS.inkSoft }}>指揮官抽出任務卡後即可使用</span>}
+        {currentCard && poolSize === 0 && <span className="text-xs" style={{ color: COLORS.red }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
+        {noneLeft && <span className="text-xs" style={{ color: COLORS.red }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
+        {failed && <span className="text-xs" style={{ color: COLORS.red }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
+        {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
       </div>
 
       {currentCard && (
         <div>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 8 種，你的那項會反白，其他人看不到）</div>
-          <SituationList scenarios={currentCard.scenarios} activeNumber={myRevealed ? myNumber : null} />
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，你的那項會反白，其他人看不到）</div>
+          <SituationList scenarios={currentCard.scenarios} activeNumber={myNumber} />
         </div>
       )}
     </>
@@ -653,24 +875,29 @@ function TtolHostView({ state, pushState }) {
   function tallyFor(id) {
     const g = (ttol.guesses && ttol.guesses[id]) || {};
     const vals = Object.values(g);
-    return { correct: vals.filter((v) => v.result === "correct").length, wrong: vals.filter((v) => v.result === "wrong").length };
+    return {
+      correct: vals.filter((v) => v.result === "correct").length,
+      wrong: vals.filter((v) => v.result === "wrong").length,
+      // 已送出但對方的裝置還沒比對答案
+      waiting: vals.filter((v) => v.result === null || v.result === undefined).length,
+    };
   }
 
   return (
     <div>
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         每個人先在自己手機上填寫情報並提交，全部人（或大部分人）填完後按下方按鈕開始「情報判讀」環節——大家會同時在自己手機上，各自判讀自己小隊內其他每一位夥伴，不用輪流等待。
       </p>
 
-      <div className="rounded-2xl p-4 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>已提交名單（依小隊）</div>
-        {Object.keys(byGroup).length === 0 && <div className="text-xs" style={{ color: COLORS.creamDim, opacity: 0.7 }}>目前還沒有人提交。</div>}
+      <div className="rounded-2xl p-4 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>已提交名單（依小隊）</div>
+        {Object.keys(byGroup).length === 0 && <div className="text-xs" style={{ color: COLORS.inkSoft, opacity: 0.7 }}>目前還沒有人提交。</div>}
         {Object.entries(byGroup).map(([g, list]) => (
           <div key={g} className="mb-2">
-            <div className="text-xs font-bold mb-1" style={{ color: COLORS.goldDim }}>第 {g} 小隊（{list.length} 人）</div>
+            <div className="text-xs font-bold mb-1" style={{ color: COLORS.amber }}>第 {g} 小隊（{list.length} 人）</div>
             <div className="flex flex-wrap gap-1.5">
               {list.map((p) => (
-                <span key={p.id} className="text-xs px-2 py-1 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.creamDim, border: `1px solid ${COLORS.goldDim}` }}>{p.nickname || p.name}</span>
+                <span key={p.id} className="text-xs px-2 py-1 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.inkSoft, border: `1px solid ${COLORS.amber}` }}>{p.nickname || p.name}</span>
               ))}
             </div>
           </div>
@@ -678,30 +905,31 @@ function TtolHostView({ state, pushState }) {
       </div>
 
       {ttol.phase === "writing" && (
-        <button onClick={startGuessing} disabled={profiles.length === 0} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40 mb-6" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={startGuessing} disabled={profiles.length === 0} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40 mb-6" style={{ background: COLORS.yellow, color: "#241A14" }}>
           大家自我介紹完了，開始情報判讀
         </button>
       )}
 
       {ttol.phase === "guessing" && (
-        <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
-          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>情報判讀進度（不會顯示是誰判讀的、選了什麼）</div>
+        <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>情報判讀進度（不會顯示是誰判讀的、選了什麼）</div>
           <div className="space-y-1.5 mb-2">
             {profiles.map(([id, p]) => {
               const t = tallyFor(id);
               return (
-                <div key={id} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg" style={{ background: "#EAF6FF", border: `1px solid ${COLORS.violet}` }}>
-                  <span style={{ color: COLORS.creamDim }}>第{p.group}小隊・{p.nickname || p.name}</span>
+                <div key={id} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg" style={{ background: "#EAF6FF", border: `1px solid ${COLORS.blue}` }}>
+                  <span style={{ color: COLORS.inkSoft }}>第{p.group}小隊・{p.nickname || p.name}</span>
                   <span>
-                    <span style={{ color: COLORS.goldDim, fontWeight: 700 }}>判讀成功 {t.correct}</span>　
-                    <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>判讀失敗 {t.wrong}</span>
-                    {t.wrong > 0 && t.correct === 0 && <span className="ml-1" style={{ color: COLORS.cardEdge }}>（目前全員尚未判讀成功）</span>}
+                    <span style={{ color: COLORS.amber, fontWeight: 700 }}>判讀成功 {t.correct}</span>　
+                    <span style={{ color: COLORS.red, fontWeight: 700 }}>判讀失敗 {t.wrong}</span>
+                    {t.waiting > 0 && <span className="ml-1" style={{ color: COLORS.inkSoft }}>　待確認 {t.waiting}</span>}
+                    {t.wrong > 0 && t.correct === 0 && <span className="ml-1" style={{ color: COLORS.red }}>（目前全員尚未判讀成功）</span>}
                   </span>
                 </div>
               );
             })}
           </div>
-          <button onClick={finishTtol} className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.goldDim }}>
+          <button onClick={finishTtol} className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.amber }}>
             情報交換結束，前往下一關 <Icon name="ChevronRight" size={16} />
           </button>
         </div>
@@ -716,39 +944,51 @@ function TtolWriteForm({ myGroup, onSubmit }) {
   const [nickname, setNickname] = useState("");
   const [statements, setStatements] = useState(["", "", "", ""]);
   const [lieIndex, setLieIndex] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  const canSubmit = school && name && nickname && statements.every((s) => s.trim());
+  const canSubmit = school && name && nickname && statements.every((s) => s.trim()) && !sending;
+
+  async function send() {
+    if (!canSubmit) return;
+    setSending(true); setFailed(false);
+    // 注意 lieIndex 是第二個參數，不在 profile 裡：profile 會上傳，答案不會
+    const res = await onSubmit({ school, name, nickname, statements, group: myGroup }, lieIndex);
+    setSending(false);
+    if (!res || !res.ok) setFailed(true);
+  }
 
   return (
     <div>
-      <p className="text-sm mb-5" style={{ color: COLORS.creamDim }}>填寫你的情報，還有四則關於你的事——三則真的、一則是你編出來的假情報，等一下讓同小隊夥伴判讀。</p>
+      <p className="text-sm mb-5" style={{ color: COLORS.inkSoft }}>填寫你的情報，還有四則關於你的事——三則真的、一則是你編出來的假情報，等一下讓同小隊夥伴判讀。</p>
       <div className="space-y-3 mb-4">
-        <input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="所屬基地" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="代號" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
-        <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="暱稱" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+        <input value={school} onChange={(e) => setSchool(e.target.value)} aria-label="所屬基地" placeholder="所屬基地" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="代號" placeholder="代號" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
+        <input value={nickname} onChange={(e) => setNickname(e.target.value)} aria-label="暱稱" placeholder="暱稱" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
       </div>
-      <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>四則情報（點選單選鈕標記哪一則是假的）</div>
+      <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>四則情報（點選單選鈕標記哪一則是假的）</div>
       <div className="space-y-2 mb-5">
         {statements.map((s, i) => (
           <div key={i} className="flex items-center gap-2">
-            <input type="radio" name="lie" checked={lieIndex === i} onChange={() => setLieIndex(i)} />
+            <input type="radio" name="lie" aria-label={`把第 ${i + 1} 則標記為假情報`} checked={lieIndex === i} onChange={() => setLieIndex(i)} />
             <input
               value={s}
               onChange={(e) => setStatements((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))}
-              placeholder={`第 ${i + 1} 則情報`}
+              aria-label={`第 ${i + 1} 則情報`} placeholder={`第 ${i + 1} 則情報`}
               className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}
+              style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}
             />
           </div>
         ))}
       </div>
+      {failed && <div className="text-xs mb-3 text-center" style={{ color: COLORS.red }}>⚠ 沒有提交成功，請確認網路連線後再按一次。</div>}
       <button
-        onClick={() => onSubmit({ school, name, nickname, statements, lieIndex, group: myGroup })}
+        onClick={send}
         disabled={!canSubmit}
         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40"
-        style={{ background: COLORS.gold, color: "#241A14" }}
+        style={{ background: COLORS.yellow, color: "#241A14" }}
       >
-        提交
+        {sending ? "提交中…" : "提交"}
       </button>
     </div>
   );
@@ -758,15 +998,15 @@ function TtolLivingRoom({ ttol, myGroup }) {
   const mine = Object.entries(ttol.profiles || {}).filter(([, p]) => p.group === myGroup);
   return (
     <div>
-      <p className="text-sm mb-5" style={{ color: COLORS.creamDim }}>提交完成！輪流自我介紹，介紹完後指揮官會帶大家進入情報判讀環節。</p>
+      <p className="text-sm mb-5" style={{ color: COLORS.inkSoft }}>提交完成！輪流自我介紹，介紹完後指揮官會帶大家進入情報判讀環節。</p>
       <div className="space-y-3">
         {mine.map(([id, p]) => (
-          <div key={id} className="rounded-2xl p-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-            <div className="text-sm font-bold mb-1" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{p.nickname}（{p.name}）</div>
-            <div className="text-xs mb-2" style={{ color: COLORS.creamDim }}>{p.school}</div>
+          <div key={id} className="rounded-2xl p-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+            <div className="text-sm font-bold mb-1" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{p.nickname}（{p.name}）</div>
+            <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>{p.school}</div>
             <div className="space-y-1">
               {p.statements.map((s, i) => (
-                <div key={i} className="text-xs px-2.5 py-1.5 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.cream }}>{i + 1}. {s}</div>
+                <div key={i} className="text-xs px-2.5 py-1.5 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.ink }}>{i + 1}. {s}</div>
               ))}
             </div>
           </div>
@@ -776,86 +1016,92 @@ function TtolLivingRoom({ ttol, myGroup }) {
   );
 }
 
-function TtolGuessCard({ target, targetId, myId, ttol, pushState, state }) {
+function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
   const myGuess = (ttol.guesses && ttol.guesses[targetId] && ttol.guesses[targetId][myId]) || null;
   const [picked, setPicked] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState(false);
   const locked = myGuess && (myGuess.result === "correct" || myGuess.result === "wrong");
+  // 結果留白代表已送出、正在等對方的裝置比對答案
+  const awaiting = !!myGuess && (myGuess.result === null || myGuess.result === undefined);
 
-  async function submitGuess() {
-    if (picked === null) return;
-    const attempts = myGuess ? myGuess.attempts : 0;
-    const isCorrect = picked === target.lieIndex;
-    const result = isCorrect ? "correct" : (attempts + 1 >= 2 ? "wrong" : "pending");
-    const nextGuesses = {
-      ...(ttol.guesses || {}),
-      [targetId]: { ...((ttol.guesses || {})[targetId] || {}), [myId]: { attempts: attempts + 1, result } },
-    };
-    await pushState({ ...state, ttol: { ...ttol, guesses: nextGuesses } });
-    setPicked(null);
+  /* 判讀次數交給 submitGuess 依「遠端最新值」計算，這裡不自己算——
+     全隊同時送出時本地那份很可能已經過期。對錯則完全不在這裡判定：
+     答案只存在對方的裝置上，我們送出的只是「我猜第幾則」。 */
+  async function send() {
+    if (picked === null || sending) return;
+    setSending(true); setFailed(false);
+    const res = await submitGuess(targetId, picked);
+    setSending(false);
+    if (res && res.ok) setPicked(null);
+    else setFailed(true);
   }
 
   return (
-    <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-      <p className="text-sm mb-3"><span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{target.nickname}</span> <span style={{ color: COLORS.creamDim }}>的哪一則情報是假的？</span></p>
+    <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+      <p className="text-sm mb-3"><span style={{ color: COLORS.amber, fontWeight: 700 }}>{target.nickname}</span> <span style={{ color: COLORS.inkSoft }}>的哪一則情報是假的？</span></p>
       <div className="space-y-2 mb-3">
         {target.statements.map((s, i) => (
           <button
             key={i}
-            onClick={() => !locked && setPicked(i)}
-            disabled={locked}
+            onClick={() => !locked && !awaiting && setPicked(i)}
+            disabled={locked || awaiting}
             className="w-full text-left text-sm px-3 py-2.5 rounded-xl"
-            style={{ background: picked === i ? COLORS.gold : COLORS.bg, color: picked === i ? "#241A14" : COLORS.cream, border: `1px solid ${picked === i ? COLORS.gold : COLORS.violet}` }}
+            style={{ background: picked === i ? COLORS.yellow : COLORS.bg, color: picked === i ? "#241A14" : COLORS.ink, border: `1px solid ${picked === i ? COLORS.yellow : COLORS.blue}` }}
           >
             {i + 1}. {s}
           </button>
         ))}
       </div>
-      {!locked && (
-        <button onClick={submitGuess} disabled={picked === null} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
-          {myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀"}
+      {!locked && !awaiting && (
+        <button onClick={send} disabled={picked === null || sending} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.red, color: "#FFFFFF" }}>
+          {sending ? "送出中…" : (myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀")}
         </button>
       )}
-      {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.goldDim }}>✓ 判讀成功！</div>}
-      {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.cardEdge }}>✕ 判讀失敗，兩次機會用完。</div>}
-      {myGuess && myGuess.result === "pending" && <div className="text-center text-sm mt-2" style={{ color: COLORS.creamDim }}>還沒判讀成功，再試一次！</div>}
+      {awaiting && (
+        <div className="text-center text-sm" style={{ color: COLORS.inkSoft }}>
+          已送出，等待 {target.nickname} 的裝置確認…
+          <div className="text-xs mt-1" style={{ opacity: 0.75 }}>（答案只存在對方手機上，請對方保持頁面開啟）</div>
+        </div>
+      )}
+      {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.amber }}>✓ 判讀成功！</div>}
+      {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.red }}>✕ 判讀失敗，兩次機會用完。</div>}
+      {myGuess && myGuess.result === "pending" && <div className="text-center text-sm mt-2" style={{ color: COLORS.inkSoft }}>還沒判讀成功，再試一次！</div>}
+      {failed && <div className="text-center text-xs mt-2" style={{ color: COLORS.red }}>⚠ 這次判讀沒有送出成功（不算次數），請再按一次送出。</div>}
     </div>
   );
 }
 
-function TtolGuessing({ ttol, myGroup, myId, pushState, state }) {
+function TtolGuessing({ ttol, myGroup, myId, submitGuess }) {
   const targets = Object.entries(ttol.profiles || {}).filter(([id, p]) => p.group === myGroup && id !== myId);
 
   return (
     <div>
-      <p className="text-sm mb-4 text-center" style={{ color: COLORS.creamDim }}>背對背獨立作答，不能問提示——判讀同小隊每一位夥伴的哪一則情報是假的。你自己的不會出現在這裡。</p>
-      {targets.length === 0 && <div className="text-center text-sm py-10" style={{ color: COLORS.creamDim }}>目前小隊內還沒有其他人可以判讀。</div>}
+      <p className="text-sm mb-4 text-center" style={{ color: COLORS.inkSoft }}>背對背獨立作答，不能問提示——判讀同小隊每一位夥伴的哪一則情報是假的。你自己的不會出現在這裡。</p>
+      {targets.length === 0 && <div className="text-center text-sm py-10" style={{ color: COLORS.inkSoft }}>目前小隊內還沒有其他人可以判讀。</div>}
       {targets.map(([id, p]) => (
-        <TtolGuessCard key={id} target={p} targetId={id} myId={myId} ttol={ttol} pushState={pushState} state={state} />
+        <TtolGuessCard key={id} target={p} targetId={id} myId={myId} ttol={ttol} submitGuess={submitGuess} />
       ))}
     </div>
   );
 }
 
-function TtolPlayerView({ state, pushState, myGroup, myId }) {
+function TtolPlayerView({ state, submitProfile, submitGuess, myGroup, myId }) {
   const ttol = state.ttol || EMPTY_STATE.ttol;
-  const submitted = !!ttol.profiles[myId];
+  const submitted = !!(ttol.profiles || {})[myId];
 
-  async function handleSubmit(profile) {
-    const nextProfiles = { ...(ttol.profiles || {}), [myId]: profile };
-    await pushState({ ...state, ttol: { ...ttol, profiles: nextProfiles } });
-  }
-
-  if (!submitted) return <TtolWriteForm myGroup={myGroup} onSubmit={handleSubmit} />;
+  if (!submitted) return <TtolWriteForm myGroup={myGroup} onSubmit={submitProfile} />;
   if (ttol.phase === "writing") return <TtolLivingRoom ttol={ttol} myGroup={myGroup} />;
-  return <TtolGuessing ttol={ttol} myGroup={myGroup} myId={myId} pushState={pushState} state={state} />;
+  return <TtolGuessing ttol={ttol} myGroup={myGroup} myId={myId} submitGuess={submitGuess} />;
 }
 
 /* ---------- App ---------- */
 function App() {
-  const [role, setRole] = useState("host"); // host | player-join | player
+  const restored = useRef(loadSession()).current; // 上次已加入的房間（如果有）
+  const [role, setRole] = useState(restored ? "player" : "host"); // host | player-join | player
   const [room, setRoom] = useState(null);
-  const [roomReal, setRoomReal] = useState(null); // null=尚未確定, true=真的連上同步伺服器, false=連不上（房間代碼無法給人加入）
-  const [joinedRoom, setJoinedRoom] = useState(null);
+  const [roomReal, setRoomReal] = useState(restored ? true : null); // null=尚未確定, true=真的連上同步伺服器, false=連不上（房間代碼無法給人加入）
+  const [joinedRoom, setJoinedRoom] = useState(restored ? restored.room : null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState("");
 
@@ -865,10 +1111,41 @@ function App() {
   const [syncOk, setSyncOk] = useState(null);
   const [myGroup, setMyGroup] = useState(null);
   const [editingStory, setEditingStory] = useState(false);
-  const pollRef = useRef(null);
-  const myIdRef = useRef(`p${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const [dataRestored, setDataRestored] = useState(false);
+  const myIdRef = useRef(loadOrCreateId());
 
   const activeRoom = role === "player" ? joinedRoom : room;
+  // roomReal === false 代表連不上 kvdb（單機測試模式），這時完全不要發網路請求。
+  const syncEnabled = !!activeRoom && roomReal !== false;
+
+  /* 讓非同步的寫入流程隨時拿得到最新的本地 state，不必把它放進 useCallback 的相依陣列。 */
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  /* 寫入進行中（以及寫完後的短暫沉澱期）不要套用輪詢結果，
+     否則自己剛送出的異動會被一個較早發出、還在路上的輪詢回應蓋回舊值。 */
+  const writingRef = useRef(0);
+  const settleUntilRef = useRef(0);
+  const repairingRef = useRef(false);
+  const judgingRef = useRef(false);
+  /* 連續操作時會有多個寫入同時在路上。較早發出、較晚回來的那個若把結果套回畫面，
+     就會把使用者已經前進的關卡拉回去。只有最新一次寫入有資格更新畫面。 */
+  const writeSeqRef = useRef(0);
+
+  /* 而且同一台裝置連續發出的寫入，也不能任其並行：網路抖動會讓較晚發出的先抵達、
+     較早發出的後抵達，伺服器最後就停在舊的值上（指揮官快速換關卡時會整個退回去）。
+     這裡把本機的寫入串成一條佇列，確保抵達順序等於操作順序。 */
+  const writeChainRef = useRef(Promise.resolve());
+  const enqueueWrite = useCallback((fn) => {
+    const run = writeChainRef.current.then(fn, fn);
+    writeChainRef.current = run.then(() => {}, () => {});
+    return run;
+  }, []);
+  const beginWrite = useCallback(() => { writingRef.current += 1; }, []);
+  const endWrite = useCallback(() => {
+    writingRef.current = Math.max(0, writingRef.current - 1);
+    settleUntilRef.current = Date.now() + 800;
+  }, []);
 
   useEffect(() => {
     if (role !== "host" || room) return;
@@ -879,47 +1156,311 @@ function App() {
     })();
   }, [role, room]);
 
-  const pushState = useCallback(async (next) => {
+  /* 指揮官端的寫入：只負責流程狀態（活動、關卡、計時器、任務卡、故事文字）。
+     takenNumbers 與 ttol.profiles / ttol.guesses 是玩家寫的，寫回去時一律以遠端最新值為準，
+     否則指揮官那份過期快照會把大家剛填好的資料整包抹掉。
+     只有明確要清空該輪資料的動作（抽新任務卡、重置、換活動）才傳 resetPlayerData。 */
+  const pushState = useCallback(async (next, opts = {}) => {
+    // 蓋上指揮官的時鐘，讓玩家能校正自己的倒數（見上方 noteHostTime）
+    if (role === "host") next = { ...next, hostTime: Date.now() };
     setState(next);
-    if (!activeRoom) return false;
-    const ok = await kvSet(activeRoom, "state", next);
-    setSyncOk(ok);
-    return ok;
-  }, [activeRoom]);
-  const pushCards = useCallback(async (next) => {
+    if (!syncEnabled) return false;
+    const seq = ++writeSeqRef.current;
+    beginWrite();
+    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => {
+      if (!remote || opts.resetPlayerData) return next;
+      const base = normalizeState(remote);
+      return {
+        ...next,
+        takenNumbers: base.takenNumbers,
+        ttol: { ...(next.ttol || EMPTY_STATE.ttol), profiles: base.ttol.profiles, guesses: base.ttol.guesses },
+      };
+    }));
+    endWrite();
+    setSyncOk(res.ok);
+    if (res.ok && role === "host" && activeRoom) saveBackup(activeRoom, res.value || next);
+    if (res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
+    return res.ok;
+  }, [role, activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
+
+  /* 編輯任務卡時每個按鍵都會呼叫這裡。逐鍵送出等於一個字一次 PUT，
+     所以打字類的異動傳 debounce，停止輸入 600ms 後才真的寫出去。 */
+  const cardsTimerRef = useRef(null);
+  const pushCards = useCallback(async (next, opts = {}) => {
     setCards(next);
-    if (!activeRoom) return false;
-    const ok = await kvSet(activeRoom, "cards", next);
-    setSyncOk(ok);
-    return ok;
-  }, [activeRoom]);
+    if (!syncEnabled) return false;
+    const write = async () => {
+      beginWrite();
+      const ok = await kvSet(activeRoom, "cards", next);
+      endWrite();
+      setSyncOk(ok);
+      return ok;
+    };
+    if (cardsTimerRef.current) { clearTimeout(cardsTimerRef.current); cardsTimerRef.current = null; }
+    if (!opts.debounce) return write();
+    cardsTimerRef.current = setTimeout(() => { cardsTimerRef.current = null; write(); }, 600);
+    return true;
+  }, [activeRoom, syncEnabled, beginWrite, endWrite]);
+  useEffect(() => () => { if (cardsTimerRef.current) clearTimeout(cardsTimerRef.current); }, []);
+
+  /* 玩家端的寫入：mutator 只能改自己那一筆，其餘欄位原封不動沿用遠端最新值。
+     verify 負責確認寫入沒有被同時送出的其他人蓋掉，被蓋掉就重讀重試。 */
+  const mutatePlayerData = useCallback(async (mutator, verify) => {
+    if (!syncEnabled) {
+      const local = mutator(normalizeState(stateRef.current));
+      if (local) setState(local);
+      return { ok: true, value: local || stateRef.current, local: true };
+    }
+    const seq = ++writeSeqRef.current;
+    beginWrite();
+    const res = await enqueueWrite(() => kvMutate(activeRoom, "state", (remote) => mutator(normalizeState(remote || stateRef.current)), { verify, spread: 300 }));
+    endWrite();
+    setSyncOk(res.ok);
+    // 只有確認寫入成功才更新畫面。失敗時維持原狀並回報，讓使用者知道要再按一次，
+    // 而不是看到一個伺服器上根本不存在的結果。
+    if (res.ok && res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
+    return res;
+  }, [activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
+
+  /* 我這台裝置送出過的東西。寫入成功「當下」不代表就安全了——另一個讀取時間較早的人
+     隨後把整包狀態寫回去，一樣會把我的資料蓋掉。所以每次輪詢都拿這份記錄跟遠端對照，
+     發現自己的東西不見了就補寫回去。這讓整個同步變成會自我修復、最終一致。 */
+  const myDataRef = useRef({ profile: null, guesses: {}, claim: null });
+
+  const repairPatch = useCallback((base) => {
+    const mine = myDataRef.current;
+    const myId = myIdRef.current;
+    let next = base, changed = false;
+    /* 指揮官換活動時會清空全部資料；那不是「被蓋掉」，不能補寫回去，否則重置會被玩家撤銷。
+       情報與判讀也只在情報交換那一關才需要維護。 */
+    if (!base.activity) { myDataRef.current = { profile: null, guesses: {}, claim: null }; return null; }
+    const inTtol = base.stage === "ttol";
+    if (inTtol && mine.profile && !base.ttol.profiles[myId]) {
+      next = { ...next, ttol: { ...next.ttol, profiles: { ...next.ttol.profiles, [myId]: mine.profile } } };
+      changed = true;
+    }
+    Object.keys(inTtol ? mine.guesses : {}).forEach((targetId) => {
+      const want = mine.guesses[targetId];
+      const have = (next.ttol.guesses[targetId] || {})[myId];
+      if (!have || have.attempts < want.attempts) {
+        // result 是對方的裝置判定後寫上的，補寫自己的猜測時不能把它蓋掉
+        const merged = have && have.attempts === want.attempts ? { ...want, result: have.result } : want;
+        next = { ...next, ttol: { ...next.ttol, guesses: { ...next.ttol.guesses, [targetId]: { ...(next.ttol.guesses[targetId] || {}), [myId]: merged } } } };
+        changed = true;
+      }
+    });
+    if (mine.claim && base.cardId === mine.claim.cardId) {
+      const taken = next.takenNumbers[mine.claim.group] || {};
+      if (taken[mine.claim.number] === undefined) {
+        next = { ...next, takenNumbers: { ...next.takenNumbers, [mine.claim.group]: { ...taken, [mine.claim.number]: myId } } };
+        changed = true;
+      } else if (taken[mine.claim.number] !== myId) {
+        mine.claim = null; // 號碼已經被別人拿走，不能硬塞成兩人同號，讓畫面回到可重抽的狀態
+      }
+    } else if (mine.claim && base.cardId !== mine.claim.cardId) {
+      mine.claim = null; // 已經換了新的一輪任務卡
+    }
+    return changed ? next : null;
+  }, []);
+
+  /* 認領一張情境牌。pool 是「這張卡上真的填了內容的情境號碼」，
+     每次重試都會依最新的遠端資料重新挑，所以不會挑到別人剛拿走的、也不會抽到空白情境。 */
+  const claimScenario = useCallback(async (groupKey, pool) => {
+    const myId = myIdRef.current;
+    let picked = null, full = false;
+    const res = await mutatePlayerData(
+      (base) => {
+        const taken = base.takenNumbers[groupKey] || {};
+        const mine = Object.keys(taken).find((n) => taken[n] === myId);
+        if (mine) { picked = Number(mine); full = false; return null; } // 已經抽過，不重複寫入
+        const available = pool.filter((n) => taken[n] === undefined);
+        if (available.length === 0) { picked = null; full = true; return null; }
+        full = false;
+        picked = available[Math.floor(Math.random() * available.length)];
+        return { ...base, takenNumbers: { ...base.takenNumbers, [groupKey]: { ...taken, [picked]: myId } } };
+      },
+      (after) => picked !== null && ((normalizeState(after).takenNumbers[groupKey] || {})[picked] === myId)
+    );
+    if (!res.ok) return { picked: null, full: false, failed: true };
+    if (picked !== null) myDataRef.current.claim = { cardId: stateRef.current.cardId, group: groupKey, number: picked };
+    return { picked, full, failed: false };
+  }, [mutatePlayerData]);
+
+  const myLieRef = useRef(null); // 只存在這台裝置，從不上傳
+  useEffect(() => { if (activeRoom) myLieRef.current = loadLie(activeRoom); }, [activeRoom]);
+
+  const submitProfile = useCallback(async (profile, lieIndex) => {
+    const myId = myIdRef.current;
+    // 答案先落在本機（含 localStorage，重整後仍能繼續當裁判），上傳的內容不含答案
+    myLieRef.current = lieIndex;
+    if (activeRoom) saveLie(activeRoom, lieIndex);
+    const res = await mutatePlayerData(
+      (base) => ({ ...base, ttol: { ...base.ttol, profiles: { ...base.ttol.profiles, [myId]: profile } } }),
+      (after) => !!(normalizeState(after).ttol.profiles[myId])
+    );
+    if (res.ok) myDataRef.current.profile = profile;
+    return res;
+  }, [mutatePlayerData, activeRoom]);
+
+  /* 本人的裝置擔任裁判：把針對自己、還沒判定的猜測比對答案後寫回結果。 */
+  const judgeGuesses = useCallback(async () => {
+    const myId = myIdRef.current;
+    const lie = myLieRef.current;
+    if (lie === null || lie === undefined) return null;
+    return mutatePlayerData((base) => {
+      const mine = base.ttol.guesses[myId];
+      if (!mine) return null;
+      let changed = false;
+      const next = {};
+      Object.keys(mine).forEach((judgeId) => {
+        const g = mine[judgeId];
+        if (g && (g.result === null || g.result === undefined) && typeof g.pick === "number") {
+          next[judgeId] = { ...g, result: g.pick === lie ? "correct" : (g.attempts >= 2 ? "wrong" : "pending") };
+          changed = true;
+        } else next[judgeId] = g;
+      });
+      if (!changed) return null;
+      return { ...base, ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [myId]: next } } };
+    });
+  }, [mutatePlayerData]);
+
+  /* 送出判讀時只寫「我猜第幾則」，對錯留白——判定要等對方的裝置比對答案後寫回來。 */
+  const submitGuess = useCallback(async (targetId, pickedIndex) => {
+    const myId = myIdRef.current;
+    let attempts = 0, recorded = null;
+    const res = await mutatePlayerData(
+      (base) => {
+        const forTarget = base.ttol.guesses[targetId] || {};
+        const prev = forTarget[myId] || null;
+        if (prev && (prev.result === "correct" || prev.result === "wrong")) return null; // 兩次機會已用完
+        if (prev && (prev.result === null || prev.result === undefined)) return null;    // 還在等對方判定
+        attempts = (prev ? prev.attempts : 0) + 1;
+        recorded = { attempts, pick: pickedIndex, result: null };
+        return {
+          ...base,
+          ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [targetId]: { ...forTarget, [myId]: recorded } } },
+        };
+      },
+      (after) => {
+        const mine = (normalizeState(after).ttol.guesses[targetId] || {})[myId];
+        return !!mine && mine.attempts >= attempts;
+      }
+    );
+    if (res.ok && recorded) myDataRef.current.guesses[targetId] = recorded;
+    return res;
+  }, [mutatePlayerData]);
 
   useEffect(() => {
     if (!activeRoom) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const remoteCards = await kvGet(activeRoom, "cards");
-      const remoteState = await kvGet(activeRoom, "state");
+      if (syncEnabled) {
+        const remoteCards = await kvGet(activeRoom, "cards");
+        const remoteState = await kvGet(activeRoom, "state");
+        if (cancelled) return;
+        if (remoteCards) setCards(remoteCards);
+        if (remoteState) setState(normalizeState(remoteState));
+      }
       if (cancelled) return;
-      if (remoteCards) setCards(remoteCards);
-      if (remoteState) setState(remoteState);
+      setMyGroup(loadGroup(activeRoom));
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [activeRoom]);
+  }, [activeRoom, syncEnabled]);
 
+  /* 指揮官同樣要輪詢：他的「已提交名單」與「抽取進度」讀的都是玩家寫進來的資料，
+     不重新拉取的話那兩塊永遠是空的，而且他手上的過期快照一寫回去就會清掉玩家的成果。 */
+  /* 現場三十個人各自每 1.5 秒固定發兩個請求，對一個免費服務來說是不小的量。
+     兩個省法：畫面被切到背景（手機鎖屏、切去別的 App）時完全不發請求；
+     以及狀態一直沒變化時把間隔逐步拉長，一有變動立刻恢復到最短間隔。 */
+  const lastRawRef = useRef("");
   useEffect(() => {
-    if (role !== "player" || !activeRoom) return;
-    pollRef.current = setInterval(async () => {
-      const remoteCards = await kvGet(activeRoom, "cards");
-      const remoteState = await kvGet(activeRoom, "state");
+    if (!syncEnabled) return;
+    let cancelled = false;
+    let timer = null;
+    const baseDelay = role === "player" ? 1500 : 2500;
+    const capDelay = role === "player" ? 3000 : 6000;
+    let delay = baseDelay;
+
+    const tick = async () => {
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
+      const read = await kvRead(activeRoom, "state");
+      if (cancelled) return;
+      const remoteState = read.value;
+
+      /* 伺服器明確回報這個房間沒有資料（不是連線失敗），但遊戲其實正在進行中，
+         代表房間被清掉了——沒有存取控制的公開儲存本來就擋不住這件事。
+         指揮官手上有本機備份，直接還原回去，不必重來一場。 */
+      if (role === "host" && read.status === "missing") {
+        const backup = loadBackup(activeRoom);
+        const live = backup && backup.activity;
+        if (live) {
+          setDataRestored(true);
+          await pushState(normalizeState(backup), { resetPlayerData: true });
+          delay = baseDelay;
+          return;
+        }
+      }
+      // 任務卡只有指揮官會改，所以他不需要拉回來（拉回來反而會蓋掉正在編輯的文字）；
+      // 玩家也只有在偽裝洞穴那關才用得到，其餘時間不必浪費請求。
+      let remoteCards = null;
+      if (role === "player" && remoteState && remoteState.stage === "bar") {
+        remoteCards = await kvGet(activeRoom, "cards");
+        if (cancelled) return;
+      }
+      if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
       if (remoteCards) setCards(remoteCards);
-      if (remoteState) setState(remoteState);
-      setSyncOk(remoteCards !== null || remoteState !== null);
-    }, 1500);
-    return () => clearInterval(pollRef.current);
-  }, [role, activeRoom]);
+      if (remoteState) {
+        if (role === "player") noteHostTime(remoteState.hostTime);
+        const fresh = normalizeState(remoteState);
+        // 自己送出過、但遠端已經看不到的東西，就地補回來（畫面先顯示，背景再寫回伺服器）。
+        const patched = role === "player" ? repairPatch(fresh) : null;
+        setState(patched || fresh);
+        if (patched && !repairingRef.current) {
+          repairingRef.current = true;
+          mutatePlayerData((b) => repairPatch(b)).finally(() => { repairingRef.current = false; });
+        }
+        /* 別人猜了我的假情報，判定要由我這台裝置做——答案只有我這裡有。 */
+        if (role === "player" && !judgingRef.current) {
+          const mine = fresh.ttol.guesses[myIdRef.current];
+          const pendingJudge = mine && Object.keys(mine).some((j) => mine[j] && (mine[j].result === null || mine[j].result === undefined));
+          if (pendingJudge) {
+            judgingRef.current = true;
+            judgeGuesses().finally(() => { judgingRef.current = false; });
+          }
+        }
+      }
+      setSyncOk(remoteState !== null);
+
+      const raw = remoteState ? JSON.stringify(remoteState) : "";
+      if (raw !== lastRawRef.current) { lastRawRef.current = raw; delay = baseDelay; }
+      else delay = Math.min(Math.round(delay * 1.5), capDelay);
+    };
+
+    function schedule(ms) { if (!cancelled) timer = setTimeout(loop, ms); }
+    async function loop() {
+      if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) { delay = baseDelay; schedule(baseDelay); return; }
+      try { await tick(); } catch (e) { /* 單次輪詢失敗不該中斷整個迴圈 */ }
+      schedule(delay);
+    }
+    function onVisibility() {
+      if (typeof document !== "undefined" && !document.hidden) {
+        delay = baseDelay;
+        if (timer) clearTimeout(timer);
+        schedule(0);
+      }
+    }
+
+    schedule(baseDelay);
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData, judgeGuesses, pushState]);
 
   async function handleJoin(code) {
     setJoining(true); setJoinError("");
@@ -936,17 +1477,20 @@ function App() {
       return;
     }
     setJoining(false);
+    setRoomReal(true); // 能讀到房間資料，代表同步伺服器是通的
     setJoinedRoom(code);
     setRole("player");
+    saveSession({ room: code });
   }
   function enterTestPlayer() { setJoinedRoom(room); setRole("player"); }
-  function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); }
+  function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); saveSession(null); }
+  function chooseGroup(n) { setMyGroup(n); if (activeRoom) saveGroup(activeRoom, n); }
 
   if (role === "player-join") return <PlayerJoinScreen onJoin={handleJoin} joining={joining} error={joinError} />;
 
   if (!activeRoom || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg, color: COLORS.creamDim, fontFamily: "'Noto Sans TC', sans-serif" }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg, color: COLORS.inkSoft, fontFamily: "'Noto Sans TC', sans-serif" }}>
         <style>{FONT_IMPORT}</style>
         <div className="text-sm flex items-center gap-2"><Icon name="Loader2" size={16} className="animate-spin" /> 載入中…</div>
       </div>
@@ -971,47 +1515,59 @@ function App() {
       <div className="max-w-2xl mx-auto px-5 py-8">
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <Icon name="Mic2" size={22} style={{ color: COLORS.goldDim }} />
-            <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>皮克敏！使出 戲胞分裂</h1>
+            <Icon name="Mic2" size={22} style={{ color: COLORS.amber }} />
+            <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>皮克敏！使出 戲胞分裂</h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {role === "host" && activity && !editingStory && !isFirstStage(activity, state.stage) && (
+              <button
+                onClick={() => pushState({ ...state, stage: prevStage(activity, state.stage) })}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
+                style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
+              >
+                <Icon name="ArrowLeft" size={13} /> 上一關
+              </button>
+            )}
             {role === "host" && activity && !editingStory && (
-              <button onClick={() => setEditingStory(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}>
+              <button onClick={() => setEditingStory(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}>
                 <Icon name="BookOpen" size={13} /> 編輯故事
               </button>
             )}
             {role === "host" && activity && !editingStory && (
               <button
-                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol })}
+                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
-                style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}
+                style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
                 <Icon name="RotateCcw" size={13} /> 重新開始（換活動）
               </button>
             )}
             {!editingStory && role === "host" && (
-              <button onClick={enterTestPlayer} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.bg, background: COLORS.gold, fontWeight: 700 }}>
+              <button onClick={enterTestPlayer} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: "#241A14", background: COLORS.yellow, fontWeight: 700 }}>
                 <Icon name="Drama" size={13} /> 測試：進入皮克敏介面
               </button>
             )}
             {!editingStory && role === "player" && (
-              <button onClick={backToHost} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.bg, background: COLORS.gold, fontWeight: 700 }}>
+              <button onClick={backToHost} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: "#241A14", background: COLORS.yellow, fontWeight: 700 }}>
                 <Icon name="Crown" size={13} /> 返回指揮官介面
               </button>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 mb-6 text-xs flex-wrap" style={{ color: role === "host" ? COLORS.goldDim : COLORS.cardEdge }}>
+        <div className="flex items-center gap-1.5 mb-6 text-xs flex-wrap" style={{ color: role === "host" ? COLORS.amber : COLORS.red }}>
           {role === "host" ? <Icon name="Crown" size={13} /> : <Icon name="Drama" size={13} />}
           目前身份：{role === "host" ? "指揮官" : "皮克敏"}
-          <span style={{ color: COLORS.creamDim }}>　·　{chapterLabel}</span>
-          {myGroup && <span style={{ color: COLORS.creamDim }}>　·　第 {myGroup} 小隊</span>}
-          <span style={{ color: syncOk ? COLORS.goldDim : COLORS.creamDim, opacity: 0.8 }}>　·　{syncOk ? "已連線同步" : "同步狀態未知"}</span>
+          <span style={{ color: COLORS.inkSoft }}>　·　{chapterLabel}</span>
+          {myGroup && <span style={{ color: COLORS.inkSoft }}>　·　第 {myGroup} 小隊</span>}
+          <span style={{ color: syncOk ? COLORS.amber : COLORS.inkSoft, opacity: 0.8 }}>　·　{syncOk ? "已連線同步" : "同步狀態未知"}</span>
+          {role === "host" && dataRestored && (
+            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 房間資料曾遺失，已從本機備份還原</span>
+          )}
           {role === "host" && roomReal === false && (
-            <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
+            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
           )}
           {role === "host" && (
-            <button onClick={() => setRole("player-join")} className="ml-auto text-[11px] underline" style={{ color: COLORS.creamDim }}>
+            <button onClick={() => setRole("player-join")} className="ml-auto text-[11px] underline" style={{ color: COLORS.inkSoft }}>
               我是皮克敏（輸入房間代碼加入）
             </button>
           )}
@@ -1021,7 +1577,7 @@ function App() {
           role === "host" ? (
             <ActivitySelectScreen onSelect={(a) => pushState({ ...state, activity: a, stage: "intro" })} />
           ) : (
-            <div className="text-center py-16 text-sm" style={{ color: COLORS.creamDim }}>等待指揮官選擇今天要進行的活動…</div>
+            <div className="text-center py-16 text-sm" style={{ color: COLORS.inkSoft }}>等待指揮官選擇今天要進行的活動…</div>
           )
         ) : editingStory && role === "host" ? (
           <StoryEditor
@@ -1032,6 +1588,16 @@ function App() {
           />
         ) : (
           <>
+            {role === "host" && roomRevealStages.includes(state.stage) && (
+              <RoomCodePanel
+                room={room}
+                roomReal={roomReal}
+                totalGroups={state.totalGroups}
+                defaultOpen={roomRevealStages[0] === state.stage}
+                onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })}
+              />
+            )}
+
             {state.stage === "intro" && (
               <StoryScreen text={state.storyText[activity].intro || STORY_DEFAULT[activity].intro} chapter="序章" buttonLabel="開始第一關：皮克敏迫降" showButton={role === "host"} onNext={() => pushState({ ...state, stage: nextStage(activity, "intro") })} />
             )}
@@ -1045,20 +1611,16 @@ function App() {
                 buttonLabel={state.stage === "transition2" ? "開始：偽裝洞穴" : (activity === "training" ? "開始：情報交換" : "開始：偽裝洞穴")}
                 showButton={role === "host"}
                 onNext={() => pushState({ ...state, stage: nextStage(activity, state.stage) })}
-              >
-                {role === "host" && roomRevealStages[0] === state.stage && (
-                  <RoomCodePanel room={room} roomReal={roomReal} totalGroups={state.totalGroups} onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })} />
-                )}
-              </StoryScreen>
+              />
             )}
 
             {state.stage === "ttol" && role === "host" && <TtolHostView state={state} pushState={pushState} />}
-            {state.stage === "ttol" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={setMyGroup} />}
-            {state.stage === "ttol" && role === "player" && !mustPickGroup && <TtolPlayerView state={state} pushState={pushState} myGroup={myGroup} myId={myIdRef.current} />}
+            {state.stage === "ttol" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={chooseGroup} />}
+            {state.stage === "ttol" && role === "player" && !mustPickGroup && <TtolPlayerView state={state} submitProfile={submitProfile} submitGuess={submitGuess} myGroup={myGroup} myId={myIdRef.current} />}
 
             {state.stage === "bar" && role === "host" && <BarHostView cards={cards} state={state} pushState={pushState} pushCards={pushCards} />}
-            {state.stage === "bar" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={setMyGroup} />}
-            {state.stage === "bar" && role === "player" && !mustPickGroup && <BarPlayerView cards={cards} state={state} pushState={pushState} myGroup={myGroup} />}
+            {state.stage === "bar" && role === "player" && mustPickGroup && <GroupSelectScreen totalGroups={state.totalGroups} onSelect={chooseGroup} />}
+            {state.stage === "bar" && role === "player" && !mustPickGroup && <BarPlayerView cards={cards} state={state} claimScenario={claimScenario} myGroup={myGroup} myId={myIdRef.current} />}
           </>
         )}
       </div>
@@ -1066,8 +1628,44 @@ function App() {
   );
 }
 
+/* 任何一處 render 例外原本都會讓整頁變成空白，現場沒人知道發生什麼事。
+   這裡兜住例外並提供兩條退路：重新載入，或清掉本機資料後重新載入
+   （本機資料含玩家身分與已加入的房間，資料本身壞掉時需要這條路）。 */
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("畫面發生錯誤：", error, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const box = { background: COLORS.panel, border: `1px solid ${COLORS.red}` };
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6" style={{ background: COLORS.bg, fontFamily: "'Noto Sans TC', sans-serif" }}>
+        <div className="max-w-sm w-full rounded-2xl p-6 text-center" style={box}>
+          <div className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>畫面出了點問題</div>
+          <p className="text-xs mb-5" style={{ color: COLORS.inkSoft }}>
+            遊戲進度存在伺服器上，重新載入通常就會恢復。若反覆出現，再試下面第二個按鈕。
+          </p>
+          <div className="flex flex-col gap-2">
+            <button onClick={() => location.reload()} className="px-4 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
+              重新載入
+            </button>
+            <button
+              onClick={() => { try { localStorage.clear(); } catch (e) {} location.reload(); }}
+              className="px-4 py-2.5 rounded-full text-sm"
+              style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}
+            >
+              清除本機資料並重新載入
+            </button>
+          </div>
+          <pre className="text-[10px] mt-4 text-left overflow-x-auto" style={{ color: COLORS.inkSoft, opacity: 0.7 }}>{String(this.state.error && this.state.error.message)}</pre>
+        </div>
+      </div>
+    );
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+root.render(<ErrorBoundary><App /></ErrorBoundary>);
 </script>
 </body>
 </html>

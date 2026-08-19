@@ -1,0 +1,19 @@
+{
+  "name": "pikmin-game",
+  "version": "1.0.0",
+  "private": true,
+  "description": "皮克敏主題的遊戲，細胞分裂與戲精酒吧",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tools/run-tests.js"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/preset-react": "^8.0.0",
+    "@babel/standalone": "7.23.5",
+    "playwright": "^1.49.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "tailwindcss": "3.4.17"
+  }
+}
