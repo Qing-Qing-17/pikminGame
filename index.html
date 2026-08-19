@@ -285,14 +285,43 @@ function fbMap(v) {
   return typeof v === "object" ? v : {};
 }
 
+/* 記下最後一次失敗的原因。原本不論規則被拒、網址打錯還是斷網，畫面都只說
+   「連不上同步伺服器」，排查時完全沒有線索——那是最花時間的一種錯誤訊息。 */
+let lastDbError = null;
+async function noteHttpError(res) {
+  let message = "";
+  try {
+    const text = await res.text();
+    try { message = (JSON.parse(text) || {}).error || text; } catch (e) { message = text; }
+  } catch (e) { /* 讀不到內容就算了 */ }
+  lastDbError = { kind: "http", status: res.status, message: String(message).slice(0, 200) };
+}
+function noteNetworkError() { lastDbError = { kind: "network" }; }
+
+/* 把失敗原因翻成看得懂、而且知道下一步該做什麼的說明 */
+function describeDbError() {
+  if (!dbConfigured()) return "這個網站還沒有填入 Firebase 資料庫網址。";
+  const e = lastDbError;
+  if (!e) return "連不上同步伺服器。";
+  if (e.kind === "network") {
+    return "連不上資料庫。可能是網路不通，或 index.html 裡的資料庫網址打錯了。";
+  }
+  if (e.status === 401 || e.status === 403 || /permission denied/i.test(e.message)) {
+    return "Firebase 拒絕存取（權限不足）。請到 Firebase 主控台 → Realtime Database → 規則，" +
+      "確認不是「鎖定模式」，或改用 README 裡那組規則。測試模式的規則過了 30 天也會變成拒絕。";
+  }
+  if (e.status === 404) return "找不到這個資料庫，請確認 index.html 裡的資料庫網址是否正確。";
+  return `資料庫回應了錯誤（HTTP ${e.status}）：${e.message || "沒有說明"}`;
+}
+
 async function dbGet(path) {
   if (!dbConfigured()) return { status: "error", value: null };
   try {
     const res = await fetch(dbUrl(path));
-    if (!res.ok) return { status: "error", value: null };
+    if (!res.ok) { await noteHttpError(res); return { status: "error", value: null }; }
     const value = await res.json();
     return { status: value === null ? "missing" : "ok", value };
-  } catch (e) { return { status: "error", value: null }; }
+  } catch (e) { noteNetworkError(); return { status: "error", value: null }; }
 }
 
 async function dbPut(path, value) {
@@ -301,8 +330,9 @@ async function dbPut(path, value) {
     const res = await fetch(dbUrl(path), {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(value),
     });
+    if (!res.ok) await noteHttpError(res);
     return res.ok;
-  } catch (e) { return false; }
+  } catch (e) { noteNetworkError(); return false; }
 }
 
 /* 只更新傳進來的欄位，其餘原封不動——這是取代整包覆寫的關鍵 */
@@ -312,8 +342,9 @@ async function dbPatch(path, obj) {
     const res = await fetch(dbUrl(path), {
       method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(obj),
     });
+    if (!res.ok) await noteHttpError(res);
     return res.ok;
-  } catch (e) { return false; }
+  } catch (e) { noteNetworkError(); return false; }
 }
 
 /* 原子認領：只有在該位置目前是空的時候才寫得進去。
@@ -569,7 +600,7 @@ function StoryEditor({ activity, storyText, onSave, onCancel }) {
   );
 }
 
-function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen = true }) {
+function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen = true, reason = "" }) {
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(defaultOpen);
   function copyCode() {
@@ -605,7 +636,9 @@ function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen
       </div>
       {roomReal === false ? (
         <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.red, background: "#EAF6FF", border: `1px solid ${COLORS.red}` }}>
-          ⚠ 目前連不上同步伺服器，下面這組代碼不是真的房間，皮克敏輸入也一定會顯示「代碼不正確」。請改用「測試：進入皮克敏介面」在同一台裝置測試，或部署成獨立 HTML 到 GitHub Pages 後在正式網址測試。
+          <div className="font-bold mb-1">⚠ 多人連線無法使用，下面這組代碼不是真的房間</div>
+          <div className="mb-2">{reason}</div>
+          <div style={{ opacity: 0.85 }}>指揮官這台裝置的功能都還能用；想試玩請按上方的「測試：進入皮克敏介面」。</div>
         </div>
       ) : (
         <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
@@ -1457,7 +1490,7 @@ function App() {
     const r = await dbGet(`rooms/${clean}/session`);
     setJoining(false);
     if (r.status === "error") {
-      setJoinError("目前連不上同步伺服器（不是代碼打錯），請確認網路連線後再試一次。");
+      setJoinError("不是代碼打錯——" + describeDbError());
       return;
     }
     if (r.status === "missing") {
@@ -1552,7 +1585,7 @@ function App() {
             <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 房間資料曾遺失，已從本機備份還原</span>
           )}
           {role === "host" && roomReal === false && (
-            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
+            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 多人連線目前無法使用</span>
           )}
           {role === "host" && (
             <button onClick={() => setRole("player-join")} className="ml-auto text-[11px] underline" style={{ color: COLORS.inkSoft }}>
@@ -1580,6 +1613,7 @@ function App() {
               <RoomCodePanel
                 room={room}
                 roomReal={roomReal}
+                reason={describeDbError()}
                 totalGroups={state.totalGroups}
                 defaultOpen={roomRevealStages[0] === state.stage}
                 onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })}
