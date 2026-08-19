@@ -23,6 +23,7 @@ function makeStore() {
   const stats = { get: 0, put: 0, putByKey: {} };
   return {
     stats,
+    wipe(bucket, key) { const b = buckets.get(bucket); if (b) b.delete(key); },
     read(bucket, key) {
       const b = buckets.get(bucket);
       const raw = b && b.get(key);
@@ -128,7 +129,7 @@ async function makeWorld(gameFile) {
     server.close();
   }
 
-  return { device, store, close };
+  return { device, store, close, wipe: (b, k) => store.wipe(b, k) };
 }
 
 /* 讓一個分頁以皮克敏身分加入指定房間 */

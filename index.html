@@ -169,6 +169,27 @@ function saveGroup(room, group) {
   try { localStorage.setItem(`pikmin.group.${room}`, String(group)); } catch (e) { /* 無痕模式等情況下略過 */ }
 }
 
+/* 哪一則是假情報，只留在本人的裝置上，絕不寫進共用狀態。
+   共用狀態是每個玩家的瀏覽器每隔一兩秒就會完整抓下來的東西，
+   把答案放進去等於公告給全場。改由本人的裝置擔任裁判：別人送出「我猜第幾則」，
+   本人的裝置比對後才把判定結果寫回去。 */
+function loadLie(room) {
+  try { const v = localStorage.getItem(`pikmin.lie.${room}`); return v === null ? null : Number(v); } catch (e) { return null; }
+}
+function saveLie(room, idx) {
+  try { localStorage.setItem(`pikmin.lie.${room}`, String(idx)); } catch (e) { /* 略過 */ }
+}
+
+/* 房間沒有任何存取控制：知道代碼的人都能寫、也能清空。真正的權限控管需要後端，
+   kvdb 只是一個公開的鍵值儲存。在這個限制下能做的是讓破壞可以復原——
+   指揮官每次寫入都在本機留一份備份，一旦偵測到房間資料被清掉就自動還原。 */
+function saveBackup(room, state) {
+  try { localStorage.setItem(`pikmin.backup.${room}`, JSON.stringify(state)); } catch (e) { /* 略過 */ }
+}
+function loadBackup(room) {
+  try { const raw = localStorage.getItem(`pikmin.backup.${room}`); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+
 /* 記住「已經加入哪個房間」，手機鎖屏、切換 App 或不小心重整之後才不必重新輸入代碼。 */
 const SESSION_KEY = "pikmin.session";
 function loadSession() {
@@ -221,20 +242,25 @@ async function probeReachable() {
   }
 }
 
-async function kvGet(bucket, key, attempts = 3) {
+/* 回傳 { status, value }：'ok' 讀到了、'missing' 伺服器明確說沒有、'error' 讀不到。
+   要分辨後兩者，才能在房間資料真的被清空時還原，而不會因為一次連線失敗就誤判。 */
+async function kvRead(bucket, key, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await fetch(`${KV_ROOT}/${bucket}/${key}`);
-      if (res.status === 404) return null;
+      if (res.status === 404) return { status: "missing", value: null };
       if (!res.ok) throw new Error("bad status");
       const text = await res.text();
-      return text ? JSON.parse(text) : null;
+      return { status: "ok", value: text ? JSON.parse(text) : null };
     } catch (e) {
-      if (i === attempts - 1) return null;
+      if (i === attempts - 1) return { status: "error", value: null };
       await new Promise((r) => setTimeout(r, 300));
     }
   }
-  return null;
+  return { status: "error", value: null };
+}
+async function kvGet(bucket, key, attempts = 3) {
+  return (await kvRead(bucket, key, attempts)).value;
 }
 async function kvSet(bucket, key, value) {
   try {
@@ -827,7 +853,12 @@ function TtolHostView({ state, pushState }) {
   function tallyFor(id) {
     const g = (ttol.guesses && ttol.guesses[id]) || {};
     const vals = Object.values(g);
-    return { correct: vals.filter((v) => v.result === "correct").length, wrong: vals.filter((v) => v.result === "wrong").length };
+    return {
+      correct: vals.filter((v) => v.result === "correct").length,
+      wrong: vals.filter((v) => v.result === "wrong").length,
+      // 已送出但對方的裝置還沒比對答案
+      waiting: vals.filter((v) => v.result === null || v.result === undefined).length,
+    };
   }
 
   return (
@@ -869,6 +900,7 @@ function TtolHostView({ state, pushState }) {
                   <span>
                     <span style={{ color: COLORS.goldDim, fontWeight: 700 }}>判讀成功 {t.correct}</span>　
                     <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>判讀失敗 {t.wrong}</span>
+                    {t.waiting > 0 && <span className="ml-1" style={{ color: COLORS.creamDim }}>　待確認 {t.waiting}</span>}
                     {t.wrong > 0 && t.correct === 0 && <span className="ml-1" style={{ color: COLORS.cardEdge }}>（目前全員尚未判讀成功）</span>}
                   </span>
                 </div>
@@ -898,7 +930,8 @@ function TtolWriteForm({ myGroup, onSubmit }) {
   async function send() {
     if (!canSubmit) return;
     setSending(true); setFailed(false);
-    const res = await onSubmit({ school, name, nickname, statements, lieIndex, group: myGroup });
+    // 注意 lieIndex 是第二個參數，不在 profile 裡：profile 會上傳，答案不會
+    const res = await onSubmit({ school, name, nickname, statements, group: myGroup }, lieIndex);
     setSending(false);
     if (!res || !res.ok) setFailed(true);
   }
@@ -967,13 +1000,16 @@ function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
   const [sending, setSending] = useState(false);
   const [failed, setFailed] = useState(false);
   const locked = myGuess && (myGuess.result === "correct" || myGuess.result === "wrong");
+  // 結果留白代表已送出、正在等對方的裝置比對答案
+  const awaiting = !!myGuess && (myGuess.result === null || myGuess.result === undefined);
 
-  /* 判讀的次數與結果都交給 submitGuess 依「遠端最新值」計算，
-     這裡不再自己算 attempts —— 全隊同時送出時，本地那份很可能已經過期。 */
+  /* 判讀次數交給 submitGuess 依「遠端最新值」計算，這裡不自己算——
+     全隊同時送出時本地那份很可能已經過期。對錯則完全不在這裡判定：
+     答案只存在對方的裝置上，我們送出的只是「我猜第幾則」。 */
   async function send() {
     if (picked === null || sending) return;
     setSending(true); setFailed(false);
-    const res = await submitGuess(targetId, picked, target.lieIndex);
+    const res = await submitGuess(targetId, picked);
     setSending(false);
     if (res && res.ok) setPicked(null);
     else setFailed(true);
@@ -986,8 +1022,8 @@ function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
         {target.statements.map((s, i) => (
           <button
             key={i}
-            onClick={() => !locked && setPicked(i)}
-            disabled={locked}
+            onClick={() => !locked && !awaiting && setPicked(i)}
+            disabled={locked || awaiting}
             className="w-full text-left text-sm px-3 py-2.5 rounded-xl"
             style={{ background: picked === i ? COLORS.gold : COLORS.bg, color: picked === i ? "#241A14" : COLORS.cream, border: `1px solid ${picked === i ? COLORS.gold : COLORS.violet}` }}
           >
@@ -995,10 +1031,16 @@ function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
           </button>
         ))}
       </div>
-      {!locked && (
+      {!locked && !awaiting && (
         <button onClick={send} disabled={picked === null || sending} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
           {sending ? "送出中…" : (myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀")}
         </button>
+      )}
+      {awaiting && (
+        <div className="text-center text-sm" style={{ color: COLORS.creamDim }}>
+          已送出，等待 {target.nickname} 的裝置確認…
+          <div className="text-xs mt-1" style={{ opacity: 0.75 }}>（答案只存在對方手機上，請對方保持頁面開啟）</div>
+        </div>
       )}
       {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.goldDim }}>✓ 判讀成功！</div>}
       {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.cardEdge }}>✕ 判讀失敗，兩次機會用完。</div>}
@@ -1047,6 +1089,7 @@ function App() {
   const [syncOk, setSyncOk] = useState(null);
   const [myGroup, setMyGroup] = useState(null);
   const [editingStory, setEditingStory] = useState(false);
+  const [dataRestored, setDataRestored] = useState(false);
   const myIdRef = useRef(loadOrCreateId());
 
   const activeRoom = role === "player" ? joinedRoom : room;
@@ -1062,6 +1105,7 @@ function App() {
   const writingRef = useRef(0);
   const settleUntilRef = useRef(0);
   const repairingRef = useRef(false);
+  const judgingRef = useRef(false);
   /* 連續操作時會有多個寫入同時在路上。較早發出、較晚回來的那個若把結果套回畫面，
      就會把使用者已經前進的關卡拉回去。只有最新一次寫入有資格更新畫面。 */
   const writeSeqRef = useRef(0);
@@ -1112,6 +1156,7 @@ function App() {
     }));
     endWrite();
     setSyncOk(res.ok);
+    if (res.ok && role === "host" && activeRoom) saveBackup(activeRoom, res.value || next);
     if (res.value && seq === writeSeqRef.current) setState(normalizeState(res.value));
     return res.ok;
   }, [role, activeRoom, syncEnabled, beginWrite, endWrite, enqueueWrite]);
@@ -1176,7 +1221,9 @@ function App() {
       const want = mine.guesses[targetId];
       const have = (next.ttol.guesses[targetId] || {})[myId];
       if (!have || have.attempts < want.attempts) {
-        next = { ...next, ttol: { ...next.ttol, guesses: { ...next.ttol.guesses, [targetId]: { ...(next.ttol.guesses[targetId] || {}), [myId]: want } } } };
+        // result 是對方的裝置判定後寫上的，補寫自己的猜測時不能把它蓋掉
+        const merged = have && have.attempts === want.attempts ? { ...want, result: have.result } : want;
+        next = { ...next, ttol: { ...next.ttol, guesses: { ...next.ttol.guesses, [targetId]: { ...(next.ttol.guesses[targetId] || {}), [myId]: merged } } } };
         changed = true;
       }
     });
@@ -1217,17 +1264,46 @@ function App() {
     return { picked, full, failed: false };
   }, [mutatePlayerData]);
 
-  const submitProfile = useCallback(async (profile) => {
+  const myLieRef = useRef(null); // 只存在這台裝置，從不上傳
+  useEffect(() => { if (activeRoom) myLieRef.current = loadLie(activeRoom); }, [activeRoom]);
+
+  const submitProfile = useCallback(async (profile, lieIndex) => {
     const myId = myIdRef.current;
+    // 答案先落在本機（含 localStorage，重整後仍能繼續當裁判），上傳的內容不含答案
+    myLieRef.current = lieIndex;
+    if (activeRoom) saveLie(activeRoom, lieIndex);
     const res = await mutatePlayerData(
       (base) => ({ ...base, ttol: { ...base.ttol, profiles: { ...base.ttol.profiles, [myId]: profile } } }),
       (after) => !!(normalizeState(after).ttol.profiles[myId])
     );
     if (res.ok) myDataRef.current.profile = profile;
     return res;
+  }, [mutatePlayerData, activeRoom]);
+
+  /* 本人的裝置擔任裁判：把針對自己、還沒判定的猜測比對答案後寫回結果。 */
+  const judgeGuesses = useCallback(async () => {
+    const myId = myIdRef.current;
+    const lie = myLieRef.current;
+    if (lie === null || lie === undefined) return null;
+    return mutatePlayerData((base) => {
+      const mine = base.ttol.guesses[myId];
+      if (!mine) return null;
+      let changed = false;
+      const next = {};
+      Object.keys(mine).forEach((judgeId) => {
+        const g = mine[judgeId];
+        if (g && (g.result === null || g.result === undefined) && typeof g.pick === "number") {
+          next[judgeId] = { ...g, result: g.pick === lie ? "correct" : (g.attempts >= 2 ? "wrong" : "pending") };
+          changed = true;
+        } else next[judgeId] = g;
+      });
+      if (!changed) return null;
+      return { ...base, ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [myId]: next } } };
+    });
   }, [mutatePlayerData]);
 
-  const submitGuess = useCallback(async (targetId, pickedIndex, lieIndex) => {
+  /* 送出判讀時只寫「我猜第幾則」，對錯留白——判定要等對方的裝置比對答案後寫回來。 */
+  const submitGuess = useCallback(async (targetId, pickedIndex) => {
     const myId = myIdRef.current;
     let attempts = 0, recorded = null;
     const res = await mutatePlayerData(
@@ -1235,9 +1311,9 @@ function App() {
         const forTarget = base.ttol.guesses[targetId] || {};
         const prev = forTarget[myId] || null;
         if (prev && (prev.result === "correct" || prev.result === "wrong")) return null; // 兩次機會已用完
+        if (prev && (prev.result === null || prev.result === undefined)) return null;    // 還在等對方判定
         attempts = (prev ? prev.attempts : 0) + 1;
-        const result = pickedIndex === lieIndex ? "correct" : (attempts >= 2 ? "wrong" : "pending");
-        recorded = { attempts, result };
+        recorded = { attempts, pick: pickedIndex, result: null };
         return {
           ...base,
           ttol: { ...base.ttol, guesses: { ...base.ttol.guesses, [targetId]: { ...forTarget, [myId]: recorded } } },
@@ -1287,8 +1363,23 @@ function App() {
 
     const tick = async () => {
       if (writingRef.current > 0 || Date.now() < settleUntilRef.current) { delay = baseDelay; return; }
-      const remoteState = await kvGet(activeRoom, "state");
+      const read = await kvRead(activeRoom, "state");
       if (cancelled) return;
+      const remoteState = read.value;
+
+      /* 伺服器明確回報這個房間沒有資料（不是連線失敗），但遊戲其實正在進行中，
+         代表房間被清掉了——沒有存取控制的公開儲存本來就擋不住這件事。
+         指揮官手上有本機備份，直接還原回去，不必重來一場。 */
+      if (role === "host" && read.status === "missing") {
+        const backup = loadBackup(activeRoom);
+        const live = backup && backup.activity;
+        if (live) {
+          setDataRestored(true);
+          await pushState(normalizeState(backup), { resetPlayerData: true });
+          delay = baseDelay;
+          return;
+        }
+      }
       // 任務卡只有指揮官會改，所以他不需要拉回來（拉回來反而會蓋掉正在編輯的文字）；
       // 玩家也只有在偽裝洞穴那關才用得到，其餘時間不必浪費請求。
       let remoteCards = null;
@@ -1307,6 +1398,15 @@ function App() {
         if (patched && !repairingRef.current) {
           repairingRef.current = true;
           mutatePlayerData((b) => repairPatch(b)).finally(() => { repairingRef.current = false; });
+        }
+        /* 別人猜了我的假情報，判定要由我這台裝置做——答案只有我這裡有。 */
+        if (role === "player" && !judgingRef.current) {
+          const mine = fresh.ttol.guesses[myIdRef.current];
+          const pendingJudge = mine && Object.keys(mine).some((j) => mine[j] && (mine[j].result === null || mine[j].result === undefined));
+          if (pendingJudge) {
+            judgingRef.current = true;
+            judgeGuesses().finally(() => { judgingRef.current = false; });
+          }
         }
       }
       setSyncOk(remoteState !== null);
@@ -1338,7 +1438,7 @@ function App() {
       if (timer) clearTimeout(timer);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData]);
+  }, [role, activeRoom, syncEnabled, repairPatch, mutatePlayerData, judgeGuesses, pushState]);
 
   async function handleJoin(code) {
     setJoining(true); setJoinError("");
@@ -1438,6 +1538,9 @@ function App() {
           <span style={{ color: COLORS.creamDim }}>　·　{chapterLabel}</span>
           {myGroup && <span style={{ color: COLORS.creamDim }}>　·　第 {myGroup} 小隊</span>}
           <span style={{ color: syncOk ? COLORS.goldDim : COLORS.creamDim, opacity: 0.8 }}>　·　{syncOk ? "已連線同步" : "同步狀態未知"}</span>
+          {role === "host" && dataRestored && (
+            <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>　·　⚠ 房間資料曾遺失，已從本機備份還原</span>
+          )}
           {role === "host" && roomReal === false && (
             <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
           )}
