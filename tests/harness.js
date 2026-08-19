@@ -178,6 +178,39 @@ async function fillProfile(page, nickname, lieIdx = 0) {
   await page.click('button:has-text("提交")');
 }
 
+/* 故事現在是一頁一句，所以「前往下一關」之前要先把故事翻完。
+   這個輔助函式會一直按下一頁，直到指定的關卡按鈕出現為止。 */
+async function hostAdvance(page, label, max = 30) {
+  for (let i = 0; i < max; i++) {
+    if (await page.isVisible(`text=${label}`)) {
+      await page.click(`text=${label}`);
+      return;
+    }
+    if (!(await page.isVisible("text=下一頁"))) break;
+    await page.click("text=下一頁");
+    await page.waitForTimeout(120);
+  }
+  await page.click(`text=${label}`);
+}
+
+/* 房間代碼要先設定完小隊數才會出現 */
+async function finishSetup(page) {
+  await page.waitForSelector("text=第一步：設定小隊數量", { timeout: 20000 });
+  await page.click('button:has-text("就是")');
+  await page.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+}
+
+/* 從畫面上讀出房間代碼。設定完小隊數之後，代碼是唯一以大字呈現的六位數字。 */
+async function roomCodeOnScreen(page) {
+  for (let i = 0; i < 40; i++) {
+    const txt = await page.textContent("#root").catch(() => "");
+    const m = txt.replace(/\s+/g, " ").match(/\b(\d{6})\b/);
+    if (m) return m[1];
+    await page.waitForTimeout(250);
+  }
+  throw new Error("畫面上找不到六位數字的房間代碼");
+}
+
 const ok = (cond, msg) => console.log(`  ${cond ? "✓" : "✗ 失敗:"} ${msg}`);
 
-module.exports = { makeWorld, joinAs, fillProfile, ok };
+module.exports = { makeWorld, joinAs, fillProfile, roomCodeOnScreen, hostAdvance, finishSetup, ok };

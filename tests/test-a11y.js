@@ -1,5 +1,5 @@
 /* D 階段：在實際渲染的畫面上量測文字對比度，並檢查互動元素有沒有可讀的名稱。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 /* 預設跑建置版：Tailwind 的 preflight 會把按鈕的瀏覽器預設底色（#EFEFEF）重設掉，
    少了它量到的背景色是錯的。建置版含有真正的 Tailwind，才等於使用者看到的畫面。 */
@@ -56,16 +56,16 @@ async function audit(page, where) {
 
   await host.click("text=培訓");
   await audit(host, "序章");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await audit(host, "皮克敏迫降（指揮官）");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
+  await finishSetup(host);
   await audit(host, "故事繼續＋房間代碼");
 
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  const code = await roomCodeOnScreen(host);
   const p = await world.device("p0");
   await joinAs(p, code);
-  await host.click("text=開始：情報交換");
+  await hostAdvance(host, "開始：情報交換");
   await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
   await audit(p, "選擇小隊（皮克敏）");
   await p.click(".grid.grid-cols-3 button:has-text('1')");
@@ -73,8 +73,8 @@ async function audit(page, where) {
   await audit(p, "填寫情報表單");
 
   await host.click("text=上一關");
-  await host.waitForSelector("text=皮克敏加入");
-  await host.click("text=開始：情報交換");
+  await host.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+  await hostAdvance(host, "開始：情報交換");
   await host.waitForSelector("text=已提交名單");
   await audit(host, "情報交換（指揮官）");
 

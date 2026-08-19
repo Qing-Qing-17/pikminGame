@@ -1,6 +1,6 @@
 /* 情境 C：同一小隊 6 人「同時」提交情報、接著「同時」送出判讀。
    這正是 TtolHostView 說明文字宣告的玩法（大家同時判讀、不用輪流等待）。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 const N = 6;
@@ -10,10 +10,10 @@ const N = 6;
   const host = await world.device("host");
 
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
 
   const players = [];
   for (let i = 0; i < N; i++) {
@@ -22,10 +22,7 @@ const N = 6;
     players.push(p);
   }
 
-  await host.click("text=開始：情報交換").catch(async (e) => {
-    console.log("指揮官畫面目前是:", (await host.textContent("body")).replace(/\s+/g, " ").slice(0, 400));
-    throw e;
-  });
+  await hostAdvance(host, "開始：情報交換");
   for (const p of players) {
     await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
     await p.click(".grid.grid-cols-3 button:has-text('1')");

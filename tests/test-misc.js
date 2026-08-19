@@ -1,5 +1,5 @@
 /* 情境 F：故事編輯器、計時器、以及玩家端同步顯示。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, hostAdvance } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -17,11 +17,13 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.click('button:has-text("返回")');
   ok(await host.isVisible("text=這是改寫過的序章。"), "編輯後的序章有顯示在畫面上");
   const stored = await world.db.room(await world.db.onlyRoom());
-  ok(stored.storyText.star.intro === "這是改寫過的序章。", "改寫後的故事有寫進伺服器");
-  ok(stored.storyText.training && typeof stored.storyText.training.intro === "string", "另一個活動的故事欄位結構完整");
+  ok(Array.isArray(stored.storyText.star.intro) && stored.storyText.star.intro[0] === "這是改寫過的序章。",
+     `改寫後的故事以「一行一頁」存進伺服器：${JSON.stringify(stored.storyText.star.intro)}`);
+  // 沒改寫過的活動不會有覆寫值，畫面會退回預設故事——確認退回機制仍然有效
+  ok(!stored.storyText.training || !stored.storyText.training.intro, "沒改寫過的活動不會被寫入覆寫值");
 
   // 計時器
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.waitForSelector("text=遊戲倒數");
   ok(await host.isVisible("text=03:00"), "預設倒數為 3 分鐘");
   await host.click('button:has-text("01:00")');
@@ -36,10 +38,12 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const seen = await p.textContent("body");
   ok(/00:5\d/.test(seen), `皮克敏看到同步的倒數（畫面上有 ${(seen.match(/00:\d\d/) || ["?"])[0]}）`);
 
-  await host.click("text=隨機變換人數");
+  await host.click("text=自動隨機");
+  await host.waitForSelector("text=抽一個新的數字", { timeout: 15000 });
+  await host.click("text=抽一個新的數字");
   await p.waitForTimeout(4000);
-  const hostTarget = (await host.textContent(".text-6xl")).trim();
-  const playerTarget = (await p.textContent(".text-7xl")).trim();
+  const hostTarget = (await host.textContent('[data-testid="cell-target"]')).trim();
+  const playerTarget = (await p.textContent('[data-testid="cell-target"]')).trim();
   ok(hostTarget === playerTarget, `集合人數同步一致（指揮官 ${hostTarget} / 皮克敏 ${playerTarget}）`);
 
   await world.close();

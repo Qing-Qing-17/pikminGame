@@ -111,17 +111,90 @@ const STAGE_FLOW = {
   training: ["intro", "cell", "transition1", "ttol", "transition2", "bar"],
 };
 
+/* 故事改成一頁一句：現場投影時整段長文沒人看得完，拆成短句由主持人一頁一頁帶。
+   每個元素都是一頁的內容。 */
 const STORY_DEFAULT = {
   star: {
-    intro: "指揮官奧利瑪的太空船不明原因墜毀在一顆陌生星球上，皮克敏們被震得四處逃散，變成一顆顆孤立無援的幼苗。指揮官透過通訊器呼叫：『各位皮克敏請注意——太空船的零件太重，光靠幾株幼苗根本扛不動！你們得在時間內找到足夠的同伴，聚在一起才能合力搬運。我會不時公布「目前需要的皮克敏數量」，請隨時注意最新公布的數字。夜晚一到，捕食者就會甦醒，落單的幼苗會被直接叼走、拖入陰影，再也回不到隊伍。時間結束的那一刻，所有還沒集合成功的皮克敏，都會被記錄下來，帶回基地重新編隊。』",
-    transition: "順利集合的皮克敏們，被指揮官帶進了基地深處一間偽裝用的洞穴。紅色皮克敏不怕火、黃色皮克敏能導電還能被丟得特別高、藍色皮克敏能在水裡自由活動、紫色皮克敏力大無窮、白色皮克敏跑得飛快又不怕毒——但今晚，你們要偽裝成完全不同的角色。指揮官敲了敲探測儀當作麥克風：『每一輪，我會亮出一張任務卡，上面寫著所有人最後都要喊出口的一句暗號。接著輪到你們——每個人偷偷抽一張情境牌，對應卡片背面其中一種偽裝情境，只有你自己看得到。你要想像自己正身處那個情境，用聲音把暗號喊出來，但絕對不能說出情境內容——讓夥伴們看你表演，猜猜看你偽裝成了哪一種處境。記住：同一小隊裡，每種偽裝只能被抽走一次，你的處境，全隊獨一無二。』",
+    intro: [
+      "指揮官奧利瑪的太空船，不明原因墜毀在一顆陌生的星球上。",
+      "皮克敏們被震得四處逃散，變成一顆顆孤立無援的幼苗。",
+      "通訊器響起：『各位皮克敏請注意——』",
+      "『太空船的零件太重，光靠幾株幼苗根本扛不動。』",
+      "『你們得在時間內找到足夠的同伴，聚在一起才能合力搬運。』",
+      "『我會不時公布目前需要的皮克敏數量，請隨時注意最新的數字。』",
+      "『夜晚一到，捕食者就會甦醒。』",
+      "『落單的幼苗會被直接叼走，拖入陰影，再也回不到隊伍。』",
+      "『時間結束時還沒集合成功的，都會被帶回基地重新編隊。』",
+    ],
+    transition: [
+      "順利集合的皮克敏，被帶進了基地深處一間偽裝用的洞穴。",
+      "紅色不怕火、黃色能導電、藍色能潛水、紫色力大無窮、白色跑得飛快。",
+      "但今晚，你們要偽裝成完全不同的角色。",
+      "指揮官敲了敲探測儀，當作麥克風：",
+      "『每一輪我會亮出一張任務卡，上面是所有人都要喊出口的暗號。』",
+      "『接著你們各自抽一張情境牌，只有自己看得到。』",
+      "『想像自己身處那個情境，用暗號把它演出來——但不能說出情境內容。』",
+      "『每一輪還會有一位猜題者，他不表演，負責猜大家演的是什麼。』",
+      "『同一小隊裡，每種偽裝只會出現一次。』",
+    ],
   },
   training: {
-    intro: "培訓第一天，訓練場的燈突然熄滅，只剩零星的螢光孢子微微發亮。指揮官透過通訊器宣布：『歡迎來到第一項任務——皮克敏迫降。等一下你們會像剛從太空船震落的幼苗一樣散開在場地裡，我會不時公布「集合株數」，請在時間內找到足夠的同伴、聚在一起組成一支隊伍，才能合力完成任務、免於被淘汰。集合株數會隨時改變，請隨時注意最新公布的數字；沒能在時間內集合成功的皮克敏，就會被記錄下來，成為明天分組的依據。這不只是遊戲——這是你們第一次，用身體去記住彼此的存在。』",
-    transition1: "皮克敏迫降結束，大家依照結果重新編隊完畢。指揮官請大家先各自找一個角落坐下：『接下來這項任務叫做「情報交換」，是讓大家在正式成為隊輔夥伴之前，先好好認識彼此——不管你等一下抽到的是紅、黃、藍、紫還是白色小隊，大家都得先卸下偽裝，認識真正的彼此。等一下每個人會在自己的手機上，填寫你的所屬基地、代號與暱稱，還有四則關於你的情報——其中三則是真的，一則是你編出來的假情報。填完之後，我們會輪流自我介紹，介紹完就換大家來判讀：到底哪一則是假的？記得，判讀時不能問任何提示問題，只能靠直覺、靠剛才聽到的自我介紹來判斷。每個人對每一位夥伴只有兩次判讀機會——如果一整隊的人都判讀不出某個人的假情報，那個人就要準備接受特別任務了。』",
-    transition2: "情報交換結束，謎底揭曉，幾個人臉上還帶著「怎麼可能猜不出來」的表情，也有人已經在準備等等的特別任務。指揮官重新拿起通訊器：『認識得差不多了吧？最後一項任務，帶你們去基地最深處的偽裝洞穴。』營火忽然竄高，映照著指揮官的臉：『每一輪我會亮出一張任務卡，上面是所有人最後都要喊出口的一句暗號。你們要偷偷抽一張情境牌，對應卡片背面其中一種偽裝情境，只有你自己看得到。用聲音把暗號喊出來，但不能說出情境內容——讓夥伴們猜猜看，你偽裝成了哪一種處境。同一小隊裡，每種偽裝只能被抽走一次。準備好用聲音證明自己了嗎？』",
+    intro: [
+      "培訓第一天，訓練場的燈突然熄滅。",
+      "只剩零星的螢光孢子，微微發亮。",
+      "通訊器響起：『歡迎來到第一項任務——皮克敏迫降。』",
+      "『等一下你們會像剛從太空船震落的幼苗一樣，散開在場地裡。』",
+      "『我會不時公布集合株數，請在時間內找到足夠的同伴聚在一起。』",
+      "『株數會隨時改變，請隨時注意最新的數字。』",
+      "『沒能在時間內集合成功的皮克敏，會成為明天分組的依據。』",
+      "『這不只是遊戲——這是你們第一次，用身體記住彼此的存在。』",
+    ],
+    transition1: [
+      "皮克敏迫降結束，大家依照結果重新編隊完畢。",
+      "指揮官請大家先各自找一個角落坐下。",
+      "『接下來這項任務，叫做情報交換。』",
+      "『在正式成為隊輔夥伴之前，先好好認識彼此。』",
+      "『等一下每個人會在手機上，填寫所屬基地、代號與暱稱。』",
+      "『還有四則關於你的情報——三則是真的，一則是你編出來的。』",
+      "『填完之後輪流自我介紹，介紹完就換大家判讀哪一則是假的。』",
+      "『判讀時不能問任何提示問題，只能靠直覺與剛才聽到的內容。』",
+      "『每個人對每一位夥伴，只有兩次機會。』",
+      "『如果一整隊都判讀不出某個人的假情報，那個人就要接受特別任務了。』",
+    ],
+    transition2: [
+      "情報交換結束，謎底揭曉。",
+      "幾個人臉上還帶著「怎麼可能猜不出來」的表情。",
+      "也有人已經在準備等等的特別任務。",
+      "指揮官重新拿起通訊器：『認識得差不多了吧？』",
+      "『最後一項任務，帶你們去基地最深處的偽裝洞穴。』",
+      "營火忽然竄高，映照著指揮官的臉。",
+      "『每一輪我會亮出一張任務卡，上面是所有人都要喊出口的暗號。』",
+      "『你們各自抽一張情境牌，只有自己看得到。』",
+      "『用暗號把那個情境演出來——但絕對不能說出內容。』",
+      "『每一輪有一位猜題者，他不表演，負責猜大家演的是什麼。』",
+      "『準備好用身體和聲音，證明自己了嗎？』",
+    ],
   },
 };
+
+/* 表演方式依序推進：先只能用動作，再來只能用表情，最後只能用聲音
+   （這時要用書本或扇子把臉遮住）。由主持人按鈕切換，全場同步。 */
+const PERF_MODES = [
+  { id: "action", label: "動作", hint: "只能用肢體動作演繹，不能出聲、不能靠表情。" },
+  { id: "face", label: "表情", hint: "只能用臉部表情演繹，不能出聲、不能用手比。" },
+  { id: "sound", label: "聲音", hint: "只能用聲音演繹，而且必須拿書本或扇子把臉遮住。" },
+];
+function perfMode(id) { return PERF_MODES.find((m) => m.id === id) || PERF_MODES[0]; }
+
+/* 取得某一段故事的頁面陣列。改寫過就用改寫的，否則用預設；
+   舊版存的是一整段長字串，這裡一併相容成單頁。 */
+function storyPages(storyText, activity, slot) {
+  const custom = ((storyText || {})[activity] || {})[slot];
+  const fallback = ((STORY_DEFAULT || {})[activity] || {})[slot] || [];
+  const v = custom === undefined || custom === null || custom === "" ? fallback : custom;
+  if (Array.isArray(v)) return v.filter((line) => String(line || "").trim());
+  return String(v).split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
+}
 
 const DEFAULT_TIMER = 180;
 
@@ -131,9 +204,16 @@ const EMPTY_STATE = {
   stage: "intro",
   cellTarget: 6, timerConfig: DEFAULT_TIMER, timerEndsAt: null, timerRunning: false,
   totalGroups: 6,
-  storyText: { star: { intro: "", transition: "" }, training: { intro: "", transition1: "", transition2: "" } },
+  storyText: { star: {}, training: {} },   // 只放「被改寫過」的段落，其餘用 STORY_DEFAULT
   cardId: null, cardRevealed: false, takenNumbers: {},
   ttol: { phase: "writing", profiles: {}, guesses: {} },
+  storyPage: 0,            // 故事目前翻到第幾頁
+  setupDone: false,        // 指揮官是否已設定完小隊數（設定完才顯示房間代碼）
+  targetMode: "manual",    // 集合人數：manual 手動指定 / random 自動隨機
+  perf: "action",          // 目前的表演方式
+  guessers: {},            // { 小隊: 這一輪的猜題者號碼 }
+  paused: false,           // 全場定格（音樂暫停時所有皮克敏不能動）
+  musicOn: false,          // 指揮官那台裝置的背景音樂是否播放中
 };
 
 /* takenNumbers 的格式是 { 小隊: { 情境號碼: 抽走它的玩家 id } }。
@@ -158,10 +238,13 @@ function normalizeState(raw) {
   return {
     ...EMPTY_STATE,
     ...raw,
-    storyText: {
-      star: { ...EMPTY_STATE.storyText.star, ...(story.star || {}) },
-      training: { ...EMPTY_STATE.storyText.training, ...(story.training || {}) },
-    },
+    storyText: { star: story.star || {}, training: story.training || {} },
+    storyPage: Math.max(0, Number(raw.storyPage) || 0),
+    setupDone: !!raw.setupDone,
+    targetMode: raw.targetMode === "random" ? "random" : "manual",
+    perf: perfMode(raw.perf).id,
+    guessers: fbMap(raw.guessers),
+    paused: !!raw.paused,
     takenNumbers: normalizeTaken(raw.takenNumbers),
     ttol: {
       phase: ttol.phase === "guessing" ? "guessing" : "writing",
@@ -423,13 +506,26 @@ async function dbReachable() {
   return r.status !== "error";
 }
 
-/* 房間代碼由用戶端產生。刻意避開容易看錯的字（0/O、1/I/L），
-   六碼在現場念出來或打進手機都還算輕鬆——比先前那串隨機 bucket id 好得多。 */
-const ROOM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+/* 房間代碼是六位純數字：現場念出來不會有「B 還是 D」「M 還是 N」的困擾，
+   手機也會自動跳出數字鍵盤，比英數混合快很多。 */
 function newRoomCode() {
   let s = "";
-  for (let i = 0; i < 6; i++) s += ROOM_ALPHABET[Math.floor(Math.random() * ROOM_ALPHABET.length)];
+  for (let i = 0; i < 6; i++) s += String(Math.floor(Math.random() * 10));
   return s;
+}
+
+/* 給皮克敏的連結：直接落在輸入房間代碼的畫面，不用先看到指揮官介面再自己找入口。 */
+function joinLink(room) {
+  if (typeof location === "undefined") return "";
+  const base = location.origin + location.pathname;
+  return room ? `${base}?join=${encodeURIComponent(room)}` : `${base}?join`;
+}
+function readJoinParam() {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (!p.has("join")) return null;
+    return { code: (p.get("join") || "").trim() };
+  } catch (e) { return null; }
 }
 
 async function createRoom(attempts = 5) {
@@ -492,11 +588,12 @@ function FlipCard({ label, faceLabel, revealed, children, accent, small }) {
   );
 }
 
-function SituationList({ scenarios, activeNumber }) {
+function SituationList({ scenarios, activeNumber, onlyNumbers = null }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
       {scenarios.map((s, i) => {
         const n = i + 1, active = activeNumber === n;
+        if (onlyNumbers && !onlyNumbers.includes(n)) return null;
         return (
           <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all" style={{ background: active ? COLORS.pinkFill : COLORS.panel, border: `1px solid ${active ? COLORS.pinkFill : COLORS.blue}` }}>
             <span className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0" style={{ background: active ? "#241A14" : COLORS.amberFill, color: active ? COLORS.pinkFill : "#1A1420" }}>{n}</span>
@@ -523,17 +620,64 @@ function GroupSelectScreen({ totalGroups, onSelect }) {
   );
 }
 
-function StoryScreen({ text, chapter, buttonLabel, onNext, showButton, children }) {
+/* 一頁只顯示一句。字級在桌機（投影）放大，手機維持適中。 */
+function StoryScreen({ pages, page, chapter, buttonLabel, onNext, onPrevPage, onNextPage, showControls, children }) {
+  const total = pages.length;
+  const idx = Math.min(Math.max(page, 0), Math.max(total - 1, 0));
+  const line = pages[idx] || "";
+  const atEnd = idx >= total - 1;
+
   return (
     <div className="text-center py-6">
       <Icon name="BookOpen" size={22} style={{ color: COLORS.amber, margin: "0 auto 12px" }} />
-      <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>{chapter}</div>
-      <p className="text-sm leading-loose max-w-md mx-auto mb-8" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Serif TC', serif" }}>{text}</p>
+      <div className="text-xs uppercase tracking-widest mb-6" style={{ color: COLORS.amber }}>{chapter}</div>
+
+      <div className="flex items-center justify-center min-h-[9rem] sm:min-h-[12rem] mb-6">
+        <p
+          className="text-xl sm:text-3xl leading-relaxed sm:leading-relaxed max-w-2xl mx-auto font-bold"
+          style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}
+        >
+          {line}
+        </p>
+      </div>
+
+      {total > 1 && (
+        <div className="flex items-center justify-center gap-1.5 mb-6" aria-label={`第 ${idx + 1} 頁，共 ${total} 頁`}>
+          {pages.map((_, i) => (
+            <span key={i} className="rounded-full" style={{
+              width: i === idx ? 18 : 7, height: 7,
+              background: i === idx ? COLORS.amber : COLORS.blue,
+              opacity: i === idx ? 1 : 0.35, transition: "all .2s",
+            }} />
+          ))}
+        </div>
+      )}
+
       {children}
-      {showButton && (
-        <button onClick={onNext} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
-          {buttonLabel} <Icon name="ChevronRight" size={16} />
-        </button>
+
+      {showControls && (
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <button
+            onClick={onPrevPage}
+            disabled={idx === 0}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-full text-base disabled:opacity-30"
+            style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}
+          >
+            <Icon name="ArrowLeft" size={16} /> 上一頁
+          </button>
+          {!atEnd ? (
+            <button onClick={onNextPage} className="inline-flex items-center gap-2 px-7 py-3 rounded-full font-bold text-base" style={{ background: COLORS.yellow, color: "#241A14" }}>
+              下一頁 <Icon name="ChevronRight" size={16} />
+            </button>
+          ) : (
+            <button onClick={onNext} className="inline-flex items-center gap-2 px-7 py-3 rounded-full font-bold text-base" style={{ background: COLORS.yellow, color: "#241A14" }}>
+              {buttonLabel} <Icon name="ChevronRight" size={16} />
+            </button>
+          )}
+        </div>
+      )}
+      {!showControls && total > 1 && (
+        <div className="text-xs" style={{ color: COLORS.inkSoft }}>（{idx + 1} / {total}）跟著指揮官的畫面看故事</div>
       )}
     </div>
   );
@@ -567,28 +711,43 @@ function ActivitySelectScreen({ onSelect }) {
 function StoryEditor({ activity, storyText, onSave, onCancel }) {
   const slots = activity === "training" ? ["intro", "transition1", "transition2"] : ["intro", "transition"];
   const labels = { intro: "序章", transition: "故事繼續", transition1: "故事繼續一", transition2: "故事繼續二" };
+  // 一行一頁，空行忽略——比逐頁欄位好編輯，貼上整段也還原得回來
   const [vals, setVals] = useState(() => {
     const init = {};
-    slots.forEach((k) => { init[k] = (storyText && storyText[k]) || STORY_DEFAULT[activity][k]; });
+    slots.forEach((k) => { init[k] = storyPages(storyText, activity, k).join("\n"); });
     return init;
   });
   const [status, setStatus] = useState(null);
 
   async function handleSave() {
     setStatus("saving");
-    const ok = await onSave(vals);
+    const out = {};
+    slots.forEach((k) => { out[k] = vals[k].split("\n").map((x) => x.trim()).filter(Boolean); });
+    const ok = await onSave(out);
     setStatus(ok ? "ok" : "fail");
   }
 
   return (
     <div>
+      <p className="text-sm mb-4" style={{ color: COLORS.inkSoft }}>
+        <strong>一行就是一頁</strong>，現場會一句一句翻。空行會被忽略。
+      </p>
       {slots.map((k) => (
         <div key={k}>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>編輯{labels[k]}</div>
-          <textarea value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} rows={5} className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>
+            編輯{labels[k]}（目前 {vals[k].split("\n").filter((x) => x.trim()).length} 頁）
+          </div>
+          <textarea
+            value={vals[k]}
+            onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
+            rows={10}
+            aria-label={`編輯${labels[k]}`}
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5"
+            style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}`, lineHeight: 1.9 }}
+          />
         </div>
       ))}
-      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.amber }}>✓ 已儲存，其他裝置重新整理後會看到最新內容。</div>}
+      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.amber }}>✓ 已儲存，其他裝置會立刻看到最新內容。</div>}
       {status === "fail" && <div className="text-xs mb-3" style={{ color: COLORS.red }}>✕ 儲存失敗，請檢查網路連線後再試一次。</div>}
       <div className="flex gap-3">
         <button onClick={handleSave} disabled={status === "saving"} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-60" style={{ background: COLORS.yellow, color: "#241A14" }}>
@@ -600,23 +759,46 @@ function StoryEditor({ activity, storyText, onSave, onCancel }) {
   );
 }
 
-function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen = true, reason = "" }) {
-  const [copied, setCopied] = useState(false);
-  const [open, setOpen] = useState(defaultOpen);
-  function copyCode() {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(room).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
-    }
+function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, setupDone, onSetupDone, defaultOpen = true, reason = "" }) {
+  /* 還沒設定小隊數之前不顯示代碼——先把隊伍分好再讓大家加入，
+     否則玩家一進來就要選小隊，但總數還在變動。 */
+  if (!setupDone) {
+    return (
+      <div className="rounded-2xl p-6 mb-6 text-center" style={{ background: COLORS.panel, border: `2px solid ${COLORS.amber}` }}>
+        <div className="text-sm uppercase tracking-widest mb-4" style={{ color: COLORS.amber }}>第一步：設定小隊數量</div>
+        <div className="flex items-center justify-center gap-5 mb-5">
+          <button onClick={() => onChangeTotal(-1)} aria-label="小隊數量減一" className="w-14 h-14 rounded-full text-3xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `2px solid ${COLORS.blue}` }}>−</button>
+          <span className="text-6xl font-black w-24" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
+          <button onClick={() => onChangeTotal(1)} aria-label="小隊數量加一" className="w-14 h-14 rounded-full text-3xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `2px solid ${COLORS.blue}` }}>＋</button>
+        </div>
+        <p className="text-sm mb-5" style={{ color: COLORS.inkSoft }}>總共要分成幾個小隊？設定好之後才會產生房間代碼。</p>
+        <button onClick={onSetupDone} className="px-8 py-3 rounded-full font-bold text-base" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          就是 {totalGroups} 隊，產生房間代碼
+        </button>
+      </div>
+    );
   }
 
-  /* 收合狀態：後面幾關仍然看得到代碼（遲到的人隨時能加入），但不佔滿畫面。 */
+  return <RoomCodeReady room={room} roomReal={roomReal} totalGroups={totalGroups} onChangeTotal={onChangeTotal} defaultOpen={defaultOpen} reason={reason} />;
+}
+
+/* 收合狀態要用 hook，所以拆成獨立元件（hook 不能寫在提前 return 之後） */
+function RoomCodeReady({ room, roomReal, totalGroups, onChangeTotal, defaultOpen, reason }) {
+  const [copied, setCopied] = useState("");
+  const [open, setOpen] = useState(defaultOpen);
+  const link = joinLink(room);
+  function copy(what, text) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(() => { setCopied(what); setTimeout(() => setCopied(""), 1600); });
+  }
+
   if (!open) {
     return (
       <div className="rounded-xl px-4 py-2 mb-5 flex items-center justify-center gap-3 flex-wrap" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
         <span className="text-xs" style={{ color: COLORS.inkSoft }}>房間代碼</span>
-        <span className="text-lg font-black tracking-widest" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
-        <button onClick={copyCode} disabled={!room} aria-label="複製房間代碼" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
-          {copied ? "已複製！" : "複製"}
+        <span className="text-2xl font-black tracking-[0.2em]" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
+        <button onClick={() => copy("link", link)} disabled={!room} aria-label="複製加入連結" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          {copied === "link" ? "已複製！" : "複製連結"}
         </button>
         <button onClick={() => setOpen(true)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>展開</button>
       </div>
@@ -624,38 +806,45 @@ function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen
   }
 
   return (
-    <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
-      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>
+    <div className="rounded-2xl p-6 mb-6 text-center" style={{ background: COLORS.panel, border: `2px solid ${COLORS.amber}` }}>
+      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>
         <Icon name="KeyRound" size={13} /> 皮克敏加入
       </div>
-      <div className="flex items-center justify-center gap-3 mb-4">
-        <span className="text-xs" style={{ color: COLORS.inkSoft }}>總共分成幾小隊</span>
-        <button onClick={() => onChangeTotal(-1)} aria-label="小隊數量減一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
-        <span className="text-2xl font-black w-10" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
-        <button onClick={() => onChangeTotal(1)} aria-label="小隊數量加一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
-      </div>
       {roomReal === false ? (
-        <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.red, background: "#EAF6FF", border: `1px solid ${COLORS.red}` }}>
+        <div className="text-xs mb-4 px-3 py-3 rounded-lg text-left" style={{ color: COLORS.red, background: COLORS.bg, border: `1px solid ${COLORS.red}` }}>
           <div className="font-bold mb-1">⚠ 多人連線無法使用，下面這組代碼不是真的房間</div>
           <div className="mb-2">{reason}</div>
           <div style={{ opacity: 0.85 }}>指揮官這台裝置的功能都還能用；想試玩請按上方的「測試：進入皮克敏介面」。</div>
         </div>
       ) : (
-        <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
+        <div className="text-sm mb-3" style={{ color: COLORS.inkSoft }}>請大家掃描或開啟連結，輸入這組代碼：</div>
       )}
-      <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
-      <div className="flex items-center justify-center gap-3 flex-wrap">
-        <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
-          <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
+
+      <div className="text-6xl font-black tracking-[0.15em] mb-4" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
+
+      <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
+        <button onClick={() => copy("link", link)} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+          <Icon name="Copy" size={14} /> {copied === "link" ? "已複製連結！" : "複製加入連結"}
         </button>
-        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>收合</button>}
+        <button onClick={() => copy("code", room)} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm disabled:opacity-40" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
+          {copied === "code" ? "已複製代碼！" : "只複製代碼"}
+        </button>
+      </div>
+      <div className="text-xs break-all mb-4" style={{ color: COLORS.inkSoft, opacity: 0.8 }}>{link}</div>
+
+      <div className="flex items-center justify-center gap-3 pt-3" style={{ borderTop: `1px solid ${COLORS.bg}` }}>
+        <span className="text-xs" style={{ color: COLORS.inkSoft }}>小隊數量</span>
+        <button onClick={() => onChangeTotal(-1)} aria-label="小隊數量減一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+        <span className="text-xl font-black w-8" style={{ color: COLORS.amber }}>{totalGroups}</span>
+        <button onClick={() => onChangeTotal(1)} aria-label="小隊數量加一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
+        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline ml-2" style={{ color: COLORS.inkSoft }}>收合</button>}
       </div>
     </div>
   );
 }
 
-function PlayerJoinScreen({ onJoin, joining, error }) {
-  const [code, setCode] = useState("");
+function PlayerJoinScreen({ onJoin, joining, error, initialCode = "" }) {
+  const [code, setCode] = useState(initialCode);
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
       <style>{FONT_IMPORT}</style>
@@ -663,7 +852,16 @@ function PlayerJoinScreen({ onJoin, joining, error }) {
         <Icon name="Drama" size={30} style={{ color: COLORS.red, margin: "0 auto 10px" }} />
         <h1 className="text-2xl font-black mb-1" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>加入遊戲</h1>
         <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>請輸入指揮官給你的房間代碼</p>
-        <input value={code} onChange={(e) => setCode(e.target.value.trim())} aria-label="房間代碼" placeholder="房間代碼" className="w-full text-center text-xl tracking-widest px-4 py-3 rounded-xl outline-none mb-4" style={{ background: COLORS.panel, color: COLORS.ink, border: `1px solid ${COLORS.yellow}` }} />
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          aria-label="房間代碼"
+          placeholder="房間代碼"
+          className="w-full text-center text-3xl tracking-[0.4em] px-4 py-4 rounded-xl outline-none mb-4"
+          style={{ background: COLORS.panel, color: COLORS.ink, border: `2px solid ${COLORS.yellow}` }}
+        />
         {error && <div className="text-xs mb-3" style={{ color: COLORS.red }}>{error}</div>}
         <button onClick={() => onJoin(code)} disabled={!code || joining} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {joining ? "加入中…" : "加入遊戲"}
@@ -704,14 +902,26 @@ function CellHostView({ state, pushState, activity }) {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
     setAudioName(f.name);
-    if (audioRef.current) audioRef.current.src = URL.createObjectURL(f);
+    if (audioRef.current) { audioRef.current.src = URL.createObjectURL(f); audioRef.current.loop = true; }
     setPlaying(false);
   }
+  /* 音樂會無限循環直到主持人暫停或離開這一頁。
+     暫停同時把 paused 同步出去——所有皮克敏的畫面會蓋上「定格」，音樂停＝不能動。 */
   function toggleMusic() {
-    if (!audioRef.current || !audioRef.current.src) { fileInputRef.current && fileInputRef.current.click(); return; }
-    if (playing) { audioRef.current.pause(); setPlaying(false); }
-    else { audioRef.current.play(); setPlaying(true); }
+    const a = audioRef.current;
+    if (!a || !a.src) { fileInputRef.current && fileInputRef.current.click(); return; }
+    if (playing) {
+      a.pause(); setPlaying(false);
+      pushState({ ...state, paused: true, musicOn: false });
+    } else {
+      a.loop = true;
+      a.play().catch(() => {});
+      setPlaying(true);
+      pushState({ ...state, paused: false, musicOn: true });
+    }
   }
+  // 離開這一關時把音樂與定格狀態收乾淨
+  useEffect(() => () => { const a = audioRef.current; if (a) a.pause(); }, []);
 
   const timeUp = !state.timerRunning && state.timerConfig === 0;
 
@@ -721,16 +931,33 @@ function CellHostView({ state, pushState, activity }) {
         這個畫面只給指揮官自己看／投影用，不需要皮克敏連線。實際的集合行動在現場真人進行，這裡負責顯示目前需要的皮克敏數量、倒數計時與音樂。
       </p>
 
-      <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的皮克敏數量</div>
-        <div className="flex items-center justify-center gap-4 mb-3">
-          <button onClick={() => adjustTarget(-1)} aria-label="集合人數減一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
-          <span className="text-6xl font-black w-24" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</span>
-          <button onClick={() => adjustTarget(1)} aria-label="集合人數加一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
+      <div className="rounded-2xl p-6 mb-5 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>目前需要集合的皮克敏數量</div>
+        <div data-testid="cell-target" className="text-8xl sm:text-9xl font-black leading-none mb-5" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
+
+        <div className="inline-flex rounded-full p-1 mb-4" style={{ background: COLORS.bg }}>
+          {[["manual", "手動指定"], ["random", "自動隨機"]].map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => pushState({ ...state, targetMode: id })}
+              className="px-4 py-1.5 rounded-full text-sm font-bold"
+              style={state.targetMode === id
+                ? { background: COLORS.yellow, color: "#241A14" }
+                : { background: "transparent", color: COLORS.inkSoft }}
+            >{label}</button>
+          ))}
         </div>
-        <button onClick={randomizeTarget} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: COLORS.red, color: "#FFFFFF" }}>
-          <Icon name="Dices" size={13} /> 隨機變換人數
-        </button>
+
+        {state.targetMode === "manual" ? (
+          <div className="flex items-center justify-center gap-5">
+            <button onClick={() => adjustTarget(-1)} aria-label="集合人數減一" className="w-12 h-12 rounded-full text-2xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+            <button onClick={() => adjustTarget(1)} aria-label="集合人數加一" className="w-12 h-12 rounded-full text-2xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
+          </div>
+        ) : (
+          <button onClick={randomizeTarget} className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-base font-bold" style={{ background: COLORS.red, color: "#FFFFFF" }}>
+            <Icon name="Dices" size={18} /> 抽一個新的數字
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
@@ -766,16 +993,23 @@ function CellHostView({ state, pushState, activity }) {
 
       <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
         <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
-          <Icon name="Music" size={13} /> 背景音樂（僅播放於此裝置）
+          <Icon name="Music" size={13} /> 背景音樂（無限循環，音樂只在這台裝置播放）
         </div>
-        <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFile} />
-        <audio ref={audioRef} onEnded={() => setPlaying(false)} />
-        <div className="flex items-center gap-3 justify-center">
-          <button onClick={toggleMusic} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.red, color: "#FFFFFF" }}>
-            {playing ? <Icon name="Pause" size={15} /> : <Icon name="Play" size={15} />} {audioName ? (playing ? "暫停" : "播放") : "選擇音樂檔案"}
+        <input ref={fileInputRef} type="file" accept="audio/*" aria-label="選擇背景音樂檔案" className="hidden" onChange={handleFile} />
+        <audio ref={audioRef} loop />
+        <div className="flex items-center gap-3 justify-center flex-wrap">
+          <button onClick={toggleMusic} className="flex items-center gap-2 px-7 py-3 rounded-full font-bold text-base" style={{ background: state.paused ? COLORS.red : COLORS.yellow, color: state.paused ? "#FFFFFF" : "#241A14" }}>
+            {playing ? <Icon name="Pause" size={18} /> : <Icon name="Play" size={18} />}
+            {audioName ? (playing ? "暫停（全場定格）" : "播放") : "選擇音樂檔案"}
           </button>
           {audioName && <span className="text-xs truncate max-w-[140px]" style={{ color: COLORS.inkSoft }}>{audioName}</span>}
         </div>
+        <p className="text-xs text-center mt-3" style={{ color: COLORS.inkSoft }}>
+          按暫停時，所有皮克敏的手機都會顯示「定格」——音樂停下就不能動。
+        </p>
+        {state.paused && (
+          <div className="text-center mt-3 text-sm font-bold" style={{ color: COLORS.red }}>⏸ 目前全場定格中</div>
+        )}
       </div>
 
       <button onClick={() => pushState({ ...state, stage: nextStage(activity, "cell") })} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.amber }}>
@@ -787,19 +1021,33 @@ function CellHostView({ state, pushState, activity }) {
 
 function CellPlayerView({ state }) {
   const remaining = useRemainingSeconds(state);
+
+  /* 音樂一停就是「定格」，畫面整個換掉，讓玩家一眼就知道要停住不能動。 */
+  if (state.paused) {
+    return (
+      <div className="text-center py-10">
+        <div className="rounded-3xl p-10" style={{ background: COLORS.red, color: "#FFFFFF" }}>
+          <div className="text-7xl mb-4" aria-hidden="true">⏸</div>
+          <div className="text-4xl font-black mb-3" style={{ fontFamily: "'Noto Serif TC', serif" }}>定格！</div>
+          <p className="text-lg">音樂停了，所有皮克敏立刻停住不要動。</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="text-center py-4">
       <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>跟著現場指揮官一起完成「皮克敏迫降」——找到足夠的同伴集合成隊，別被掠食者抓走！</p>
-      <div className="rounded-2xl p-6 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的數量</div>
-        <div className="text-7xl font-black mb-1" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
-        <div className="text-xs" style={{ color: COLORS.inkSoft }}>快找到這個數量的同伴，聚在一起集合成隊！</div>
+      <div className="rounded-2xl p-8 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>目前需要集合的數量</div>
+        <div data-testid="cell-target" className="text-8xl font-black leading-none mb-2" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
+        <div className="text-sm" style={{ color: COLORS.inkSoft }}>快找到這個數量的同伴，聚在一起！</div>
       </div>
       <div className="rounded-2xl p-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
         <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>
           <Icon name="TimerIcon" size={13} /> 剩餘時間
         </div>
-        <div className="text-5xl font-black" style={{ color: remaining <= 0 ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
+        <div className="text-6xl font-black" style={{ color: remaining <= 0 ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
       </div>
     </div>
   );
@@ -809,7 +1057,7 @@ function CellPlayerView({ state }) {
 function GroupProgress({ takenNumbers, totalGroups, poolSize }) {
   const groups = Array.from({ length: totalGroups }, (_, i) => i + 1);
   return (
-    <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+    <div data-testid="group-progress" className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
       <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
         <Icon name="Users" size={13} /> 各小隊抽取進度（不會顯示是誰抽了哪個情境）
       </div>
@@ -835,14 +1083,22 @@ function BarHostView({ cards, state, pushState, pushCards }) {
 
   /* 翻牌動畫是純視覺效果，用本地 flipping 做就好；原本為了動畫而連寫兩次遠端狀態，
      等於多開一個會覆蓋玩家資料的時間窗。抽新卡本來就要清空該輪的認領，所以明確重置。 */
+  /* 抽新的任務卡時，同時替每個小隊各抽一位猜題者。
+     猜題者的號碼一樣要被某個人抽走——抽到那個號碼的人就是猜題者，他不表演，
+     負責猜同隊其他人演的是什麼。所以每隊各抽一個，不是全場共用同一個號碼。 */
   async function drawCard() {
     if (cards.length === 0) return;
-    const pick = cards[Math.floor(Math.random() * cards.length)].id;
+    const card = cards[Math.floor(Math.random() * cards.length)];
+    const usable = card.scenarios.map((s, i) => (s && s.trim() ? i + 1 : 0)).filter(Boolean);
+    const guessers = {};
+    for (let g = 1; g <= state.totalGroups; g++) {
+      guessers[g] = usable.length ? usable[Math.floor(Math.random() * usable.length)] : 0;
+    }
     setFlipping(true);
-    await pushState({ ...state, cardId: pick, cardRevealed: true, takenNumbers: {} }, { resetPlayerData: true });
+    await pushState({ ...state, cardId: card.id, cardRevealed: true, takenNumbers: {}, guessers }, { resetPlayerData: true });
     setTimeout(() => setFlipping(false), 60);
   }
-  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {} }, { resetPlayerData: true }); }
+  function resetDraw() { pushState({ ...state, cardId: null, cardRevealed: false, takenNumbers: {}, guessers: {} }, { resetPlayerData: true }); }
   function addCard() {
     const id = `c${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     pushCards([...cards, { id, line: "新的一句話", scenarios: Array(8).fill("") }]);
@@ -871,6 +1127,23 @@ function BarHostView({ cards, state, pushState, pushCards }) {
             </FlipCard>
           </div>
 
+          <div className="rounded-2xl p-5 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+            <div className="text-xs uppercase tracking-widest mb-3 text-center" style={{ color: COLORS.inkSoft }}>這一輪的表演方式</div>
+            <div className="flex gap-2 justify-center mb-3 flex-wrap">
+              {PERF_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => pushState({ ...state, perf: m.id })}
+                  className="px-6 py-3 rounded-full text-base font-bold"
+                  style={state.perf === m.id
+                    ? { background: COLORS.yellow, color: "#241A14" }
+                    : { border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}
+                >{m.label}</button>
+              ))}
+            </div>
+            <p className="text-sm text-center" style={{ color: COLORS.inkSoft }}>{perfMode(state.perf).hint}</p>
+          </div>
+
           <div className="flex flex-wrap gap-3 justify-center mb-8">
             <button onClick={drawCard} disabled={cards.length === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.red, color: "#FFFFFF" }}>
               <Icon name="Shuffle" size={16} /> 抽任務卡
@@ -884,6 +1157,19 @@ function BarHostView({ cards, state, pushState, pushCards }) {
             <div className="mb-8">
               <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，指揮官不會看到誰抽到哪個）</div>
               <SituationList scenarios={currentCard.scenarios} activeNumber={null} />
+            </div>
+          )}
+
+          {currentCard && Object.keys(state.guessers || {}).length > 0 && (
+            <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+              <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>各小隊的猜題者號碼（抽到這個號碼的人不表演）</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Array.from({ length: state.totalGroups }, (_, i) => i + 1).map((g) => (
+                  <div key={g} className="text-sm px-3 py-2 rounded-lg text-center" style={{ background: COLORS.bg, color: COLORS.inkSoft, border: `1px solid ${COLORS.amber}` }}>
+                    第 {g} 小隊　<span style={{ color: COLORS.amber, fontWeight: 800 }}>{(state.guessers || {})[g] || "—"} 號</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -918,43 +1204,109 @@ function BarHostView({ cards, state, pushState, pushCards }) {
   );
 }
 
+/* 抽號碼時先跑一段洗牌動畫，最後才翻出號碼——比直接跳出數字有儀式感。 */
+function ShuffleDeck({ running, result, poolSize }) {
+  const [face, setFace] = useState(1);
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setFace(1 + Math.floor(Math.random() * Math.max(poolSize, 1))), 90);
+    return () => clearInterval(id);
+  }, [running, poolSize]);
+
+  const cards = [0, 1, 2, 3, 4];
+  return (
+    <div className="relative mx-auto mb-4" style={{ width: 150, height: 200 }}>
+      {cards.map((i) => (
+        <div
+          key={i}
+          className="absolute rounded-2xl"
+          style={{
+            inset: 0,
+            background: `repeating-linear-gradient(135deg, ${COLORS.blue} 0px, ${COLORS.blue} 10px, ${COLORS.bg} 10px, ${COLORS.bg} 20px)`,
+            border: `3px solid ${COLORS.blue}`,
+            boxShadow: "0 8px 20px rgba(0,0,0,0.25)",
+            transform: running
+              ? `translate(${(i - 2) * 14}px, ${-i * 5}px) rotate(${(i - 2) * 7}deg)`
+              : `translate(0,0) rotate(0deg)`,
+            transition: "transform .35s cubic-bezier(.2,.8,.3,1)",
+          }}
+        />
+      ))}
+      <div
+        className="absolute inset-0 rounded-2xl flex items-center justify-center"
+        style={{
+          background: COLORS.cardFace,
+          border: `3px solid ${COLORS.amber}`,
+          boxShadow: "0 10px 26px rgba(0,0,0,0.3)",
+          opacity: running || result === null ? 0 : 1,
+          transform: running || result === null ? "scale(.85)" : "scale(1)",
+          transition: "all .35s cubic-bezier(.2,.8,.3,1)",
+        }}
+      >
+        <span className="text-7xl font-black" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{result === null ? "" : result}</span>
+      </div>
+      {running && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-5xl font-black" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Serif TC', serif", opacity: 0.5 }}>{face}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
   const [drawing, setDrawing] = useState(false);
   const [noneLeft, setNoneLeft] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [flipping, setFlipping] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const currentCard = state.cardId ? cards.find((c) => c.id === state.cardId) || null : null;
   const groupKey = String(myGroup || "solo");
   const takenForGroup = (state.takenNumbers && state.takenNumbers[groupKey]) || {};
-  // 只把真的填了字的情境放進抽牌池，免得指揮官沒填完就有人抽到「（尚未填寫）」
   const pool = useMemo(
     () => (currentCard ? currentCard.scenarios.map((s, i) => (s && s.trim() ? i + 1 : 0)).filter(Boolean) : []),
     [currentCard]
   );
   const poolSize = pool.length;
 
-  /* 自己的號碼是從共用狀態裡「哪一個號碼登記在我名下」推導出來的，不是本地暫存，
-     所以重新整理頁面之後仍然找得回來，也不會因此多抽走一個號碼。 */
   const myNumber = useMemo(() => {
     const hit = Object.keys(takenForGroup).find((n) => takenForGroup[n] === myId);
     return hit ? Number(hit) : null;
   }, [takenForGroup, myId]);
 
+  const guesserNumber = Number((state.guessers || {})[groupKey] || 0) || null;
+  const iAmGuesser = myNumber !== null && guesserNumber !== null && myNumber === guesserNumber;
+  const mode = perfMode(state.perf);
+
   useEffect(() => {
-    setNoneLeft(false); setFailed(false);
-    if (!state.cardId) return;
-    setFlipping(true);
-    const t = setTimeout(() => setFlipping(false), 80);
-    return () => clearTimeout(t);
+    setNoneLeft(false); setFailed(false); setRevealed(false);
   }, [state.cardId]);
+  useEffect(() => { if (myNumber !== null && !drawing) setRevealed(true); }, [myNumber, drawing]);
 
   async function drawNumber() {
     if (!currentCard || myNumber !== null || drawing) return;
-    setDrawing(true); setNoneLeft(false); setFailed(false);
+    setDrawing(true); setNoneLeft(false); setFailed(false); setRevealed(false);
+    const started = Date.now();
     const { full, failed: err } = await claimScenario(groupKey, pool);
-    setDrawing(false);
-    if (err) setFailed(true);
-    else if (full) setNoneLeft(true);
+    // 洗牌動畫至少跑滿 1.2 秒，太快閃過反而看不出在洗牌
+    const wait = Math.max(0, 1200 - (Date.now() - started));
+    setTimeout(() => {
+      setDrawing(false);
+      if (err) setFailed(true);
+      else if (full) setNoneLeft(true);
+      else setRevealed(true);
+    }, wait);
+  }
+
+  if (state.paused) {
+    return (
+      <div className="text-center py-10">
+        <div className="rounded-3xl p-10" style={{ background: COLORS.red, color: "#FFFFFF" }}>
+          <div className="text-7xl mb-4" aria-hidden="true">⏸</div>
+          <div className="text-4xl font-black mb-3" style={{ fontFamily: "'Noto Serif TC', serif" }}>定格！</div>
+          <p className="text-lg">音樂停了，所有皮克敏立刻停住不要動。</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -964,31 +1316,62 @@ function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
           <span className="inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: COLORS.panel, color: COLORS.pink, border: `1px solid ${COLORS.pink}` }}>你的小隊：第 {myGroup} 小隊</span>
         </div>
       )}
-      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
-        {currentCard ? "指揮官已抽出任務卡，換你抽情境牌——結果只有你看得到，別讓同小隊的人知道！" : "等待指揮官抽出任務卡…（畫面會自動同步，請稍候）"}
-      </p>
+
+      {/* 這一輪只能用什麼方式演，所有人都要看得到 */}
+      <div className="rounded-2xl p-4 mb-5 text-center" style={{ background: COLORS.panel, border: `2px solid ${COLORS.yellow}` }}>
+        <div className="text-xs uppercase tracking-widest mb-1" style={{ color: COLORS.inkSoft }}>這一輪只能用</div>
+        <div className="text-3xl font-black mb-1" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{mode.label}</div>
+        <div className="text-sm" style={{ color: COLORS.inkSoft }}>{mode.hint}</div>
+      </div>
 
       <div className="flex justify-center mb-6">
-        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed && !flipping} accent={COLORS.red} small>
+        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed} accent={COLORS.red} small>
           {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
         </FlipCard>
       </div>
 
-      <div className="flex flex-col items-center gap-2 mb-8">
-        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
-          <Icon name="Shuffle" size={16} /> {drawing ? "抽牌中…" : (myNumber !== null ? "已抽過（本輪只能抽一次）" : "抽情境牌")}
-        </button>
-        {!currentCard && <span className="text-xs" style={{ color: COLORS.inkSoft }}>指揮官抽出任務卡後即可使用</span>}
-        {currentCard && poolSize === 0 && <span className="text-xs" style={{ color: COLORS.red }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
-        {noneLeft && <span className="text-xs" style={{ color: COLORS.red }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
-        {failed && <span className="text-xs" style={{ color: COLORS.red }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
-        {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
-      </div>
+      {myNumber === null && (
+        <div className="flex flex-col items-center gap-3 mb-8">
+          {(drawing || revealed) && <ShuffleDeck running={drawing} result={null} poolSize={poolSize} />}
+          <button onClick={drawNumber} disabled={!currentCard || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-8 py-4 rounded-full font-bold text-lg disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
+            <Icon name="Shuffle" size={20} /> {drawing ? "洗牌中…" : "抽情境牌"}
+          </button>
+          {!currentCard && <span className="text-sm" style={{ color: COLORS.inkSoft }}>指揮官抽出任務卡後即可使用</span>}
+          {currentCard && poolSize === 0 && <span className="text-sm" style={{ color: COLORS.red }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
+          {noneLeft && <span className="text-sm" style={{ color: COLORS.red }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
+          {failed && <span className="text-sm" style={{ color: COLORS.red }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
+        </div>
+      )}
 
-      {currentCard && (
-        <div>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，你的那項會反白，其他人看不到）</div>
-          <SituationList scenarios={currentCard.scenarios} activeNumber={myNumber} />
+      {myNumber !== null && (
+        <div className="mb-8">
+          <ShuffleDeck running={drawing} result={drawing ? null : myNumber} poolSize={poolSize} />
+
+          {iAmGuesser ? (
+            /* 猜題者：不表演，但要看得到其他人可能抽到哪些情境。
+               自己那一號不會有人演（它被自己抽走了），所以從清單裡拿掉。 */
+            <div>
+              <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.pinkFill, color: "#241A14" }}>
+                <div className="text-3xl font-black mb-1" style={{ fontFamily: "'Noto Serif TC', serif" }}>你是猜題者</div>
+                <p className="text-sm">這一輪你不用表演。看同隊夥伴怎麼演，猜他們各自是哪一種處境。</p>
+              </div>
+              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>可能的情境（不含你自己的第 {myNumber} 號）</div>
+              <SituationList
+                scenarios={currentCard ? currentCard.scenarios : []}
+                activeNumber={null}
+                onlyNumbers={pool.filter((n) => n !== myNumber)}
+              />
+            </div>
+          ) : (
+            /* 表演者：只看自己那一題。看得到全部清單會大幅降低猜題難度。 */
+            <div className="rounded-2xl p-6 text-center" style={{ background: COLORS.panel, border: `2px solid ${COLORS.amber}` }}>
+              <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>你的情境（第 {myNumber} 號，只有你看得到）</div>
+              <p className="text-xl sm:text-2xl font-bold leading-relaxed" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>
+                {(currentCard && currentCard.scenarios[myNumber - 1]) || "（尚未填寫）"}
+              </p>
+              <p className="text-sm mt-4" style={{ color: COLORS.inkSoft }}>用「{mode.label}」把暗號演出來，絕對不能說出情境內容。</p>
+            </div>
+          )}
         </div>
       )}
     </>
@@ -1230,10 +1613,13 @@ function TtolPlayerView({ state, submitProfile, submitGuess, myGroup, myId }) {
 
 /* ---------- App ---------- */
 function App() {
-  const restored = useRef(loadSession()).current; // 上次已加入的房間（如果有）
-  const [role, setRole] = useState(restored ? "player" : "host"); // host | player-join | player
+  /* 網址帶 ?join 就是給皮克敏的連結，直接落在輸入代碼的畫面；
+     其次才看上次有沒有加入過的房間。 */
+  const joinParam = useRef(readJoinParam()).current;
+  const restored = useRef(joinParam ? null : loadSession()).current;
+  const [role, setRole] = useState(joinParam ? "player-join" : (restored ? "player" : "host")); // host | player-join | player
   const [room, setRoom] = useState(null);
-  const [roomReal, setRoomReal] = useState(restored ? true : null); // null=尚未確定, true=真的連上同步伺服器, false=連不上（房間代碼無法給人加入）
+  const [roomReal, setRoomReal] = useState(restored ? true : null); // null=尚未確定, true=連得上, false=連不上或未設定
   const [joinedRoom, setJoinedRoom] = useState(restored ? restored.room : null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState("");
@@ -1256,6 +1642,12 @@ function App() {
   useEffect(() => { stateRef.current = state; }, [state]);
 
   const judgingRef = useRef(false);
+
+  /* 自己送出的寫入會以推播回音的形式繞一圈回來。主持人連續翻頁時，較早那次的回音
+     會晚於較新的本地狀態抵達，把畫面拉回舊的一頁。所以寫入期間（以及寫完後的短暫
+     沉澱期）不套用回音裡的「流程狀態」——玩家的資料仍然照常套用，那不是我們寫的。 */
+  const writingRef = useRef(0);
+  const settleUntilRef = useRef(0);
 
   /* 同一台裝置連續發出的寫入不能任其並行：網路抖動會讓較晚發出的先抵達，
      指揮官快速換關卡時整場會退回舊關卡。串成一條佇列確保抵達順序等於操作順序。 */
@@ -1293,7 +1685,14 @@ function App() {
       storyText: next.storyText, cardId: next.cardId === undefined ? null : next.cardId,
       cardRevealed: !!next.cardRevealed, hostTime: next.hostTime || 0,
       ttolPhase: (next.ttol && next.ttol.phase) || "writing",
+      storyPage: next.storyPage || 0,
+      setupDone: !!next.setupDone,
+      targetMode: next.targetMode || "manual",
+      perf: next.perf || "action",
+      guessers: next.guessers || {},
+      paused: !!next.paused,
     };
+    writingRef.current += 1;
     const ok = await enqueueWrite(async () => {
       // 明確要清空該輪玩家資料的動作（抽新任務卡、重置、換活動）才刪除那些子樹
       if (opts.resetPlayerData) {
@@ -1305,6 +1704,8 @@ function App() {
       }
       return dbPatch(`rooms/${activeRoom}/session`, session);
     });
+    writingRef.current = Math.max(0, writingRef.current - 1);
+    settleUntilRef.current = Date.now() + 700;
     setSyncOk(ok);
     if (ok && role === "host") saveBackup(activeRoom, next);
     return ok;
@@ -1443,7 +1844,13 @@ function App() {
         if (role === "player") noteHostTime((t.session || {}).hostTime);
         const cardsFromTree = Array.isArray(t.cards) ? t.cards : (t.cards ? Object.values(t.cards) : null);
         if (cardsFromTree && role === "player") setCards(cardsFromTree);
-        setState(treeToState(t));
+
+        const incoming = treeToState(t);
+        const holdSession = writingRef.current > 0 || Date.now() < settleUntilRef.current;
+        setState((prev) => (holdSession
+          // 自己的寫入還在路上：流程狀態沿用本地的，只吸收玩家那幾塊
+          ? { ...prev, takenNumbers: incoming.takenNumbers, ttol: incoming.ttol }
+          : incoming));
 
         /* 房間被清空但遊戲其實正在進行——指揮官從本機備份還原。
            房間沒有存取控制，這是唯一擋得住「整份被刪掉」的辦法。 */
@@ -1507,7 +1914,9 @@ function App() {
   function backToHost() { setRole("host"); setJoinedRoom(null); setJoinError(""); saveSession(null); }
   function chooseGroup(n) { setMyGroup(n); if (activeRoom) saveGroup(activeRoom, n); }
 
-  if (role === "player-join") return <PlayerJoinScreen onJoin={handleJoin} joining={joining} error={joinError} />;
+  if (role === "player-join") {
+    return <PlayerJoinScreen onJoin={handleJoin} joining={joining} error={joinError} initialCode={(joinParam && joinParam.code) || ""} />;
+  }
 
   if (!activeRoom || loading) {
     return (
@@ -1542,7 +1951,7 @@ function App() {
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {role === "host" && activity && !editingStory && !isFirstStage(activity, state.stage) && (
               <button
-                onClick={() => pushState({ ...state, stage: prevStage(activity, state.stage) })}
+                onClick={() => pushState({ ...state, stage: prevStage(activity, state.stage), storyPage: 0 })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
                 style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
@@ -1556,7 +1965,7 @@ function App() {
             )}
             {role === "host" && activity && !editingStory && (
               <button
-                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true, resetTtol: true })}
+                onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol, storyPage: 0, setupDone: false, guessers: {}, paused: false }, { resetPlayerData: true, resetTtol: true })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
                 style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
@@ -1616,23 +2025,37 @@ function App() {
                 reason={describeDbError()}
                 totalGroups={state.totalGroups}
                 defaultOpen={roomRevealStages[0] === state.stage}
+                setupDone={state.setupDone}
+                onSetupDone={() => pushState({ ...state, setupDone: true })}
                 onChangeTotal={(d) => pushState({ ...state, totalGroups: Math.min(20, Math.max(1, state.totalGroups + d)) })}
               />
             )}
 
             {state.stage === "intro" && (
-              <StoryScreen text={state.storyText[activity].intro || STORY_DEFAULT[activity].intro} chapter="序章" buttonLabel="開始第一關：皮克敏迫降" showButton={role === "host"} onNext={() => pushState({ ...state, stage: nextStage(activity, "intro") })} />
+              <StoryScreen
+                pages={storyPages(state.storyText, activity, "intro")}
+                page={state.storyPage}
+                chapter="序章"
+                buttonLabel="開始第一關：皮克敏迫降"
+                showControls={role === "host"}
+                onPrevPage={() => pushState({ ...state, storyPage: Math.max(0, state.storyPage - 1) })}
+                onNextPage={() => pushState({ ...state, storyPage: state.storyPage + 1 })}
+                onNext={() => pushState({ ...state, stage: nextStage(activity, "intro"), storyPage: 0 })}
+              />
             )}
             {state.stage === "cell" && role === "host" && <CellHostView state={state} pushState={pushState} activity={activity} />}
             {state.stage === "cell" && role === "player" && <CellPlayerView state={state} />}
 
             {(state.stage === "transition" || state.stage === "transition1" || state.stage === "transition2") && (
               <StoryScreen
-                text={state.storyText[activity][state.stage] || STORY_DEFAULT[activity][state.stage]}
+                pages={storyPages(state.storyText, activity, state.stage)}
+                page={state.storyPage}
                 chapter={chapterLabel}
                 buttonLabel={state.stage === "transition2" ? "開始：偽裝洞穴" : (activity === "training" ? "開始：情報交換" : "開始：偽裝洞穴")}
-                showButton={role === "host"}
-                onNext={() => pushState({ ...state, stage: nextStage(activity, state.stage) })}
+                showControls={role === "host"}
+                onPrevPage={() => pushState({ ...state, storyPage: Math.max(0, state.storyPage - 1) })}
+                onNextPage={() => pushState({ ...state, storyPage: state.storyPage + 1 })}
+                onNext={() => pushState({ ...state, stage: nextStage(activity, state.stage), storyPage: 0 })}
               />
             )}
 

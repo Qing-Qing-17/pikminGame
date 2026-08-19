@@ -18,6 +18,9 @@ node tests/test-ttol.js
 
 一次只跑一個檔案。連續啟動多個 Chromium 會在資源吃緊時出現點擊逾時。
 
+故事現在是一頁一句，所以測試要用 `hostAdvance(page, "按鈕文字")` 翻完故事才按得到
+關卡按鈕；房間代碼要先 `finishSetup(page)` 設定完小隊數才會出現。
+
 環境變數：
 
 - `GAME=/path/to/index.html` — 指定要測的檔案（可對照修改前後的版本，或改測 `dist/`）
@@ -43,6 +46,8 @@ node tests/test-ttol.js
 | `test-secrecy.js` | 假情報答案不上傳，判定由本人的裝置完成 |
 | `test-tamper.js` | 房間資料被清空時，指揮官自動從本機備份還原 |
 | `test-a11y.js` | 在實際渲染的畫面上量測文字對比度與互動元素的可讀名稱 |
+| `test-diagnostics.js` | 同步失敗時畫面說得出真正原因（權限被拒／斷線），不誤導使用者查網路 |
+| `test-features.js` | 純數字代碼、先設定小隊數、加入連結、猜題者、表演方式、表演者只看自己那題 |
 
 `test-a11y.js` 預設測 `dist/index.html`：Tailwind 的 preflight 會重設按鈕的瀏覽器預設
 底色，少了它量到的背景色是錯的，必須用含有真正 Tailwind 的建置版才等於使用者看到的畫面。
