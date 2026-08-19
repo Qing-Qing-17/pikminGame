@@ -45,11 +45,21 @@ const ICON_MAP = {
   ChevronRight: "→", Dices: "🎲", BookOpen: "📖", KeyRound: "🔑", Copy: "📋",
   Sparkles: "✨", GraduationCap: "🎓",
 };
-function Icon({ name, size = 16, className = "", style = {} }) {
+/* 彩色 emoji 是自帶顏色的字形，CSS 的 color 對它們完全沒有作用；
+   只有這兩個純文字箭頭吃得到。列出來是為了讓「這裡設了 color 卻沒效果」不再誤導人。 */
+const MONOCHROME_ICONS = new Set(["ArrowLeft", "ChevronRight"]);
+
+function Icon({ name, size = 16, className = "", style = {}, label }) {
+  const { color, ...rest } = style;
+  const applied = MONOCHROME_ICONS.has(name) ? { color, ...rest } : rest;
   return (
     <span
       className={className}
-      style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle", ...style }}
+      // 圖示多半只是裝飾，讓螢幕閱讀器略過；真的帶有意義時才給它一個名稱
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      style={{ fontSize: size, lineHeight: 1, display: "inline-block", verticalAlign: "middle", ...applied }}
     >
       {ICON_MAP[name] || "•"}
     </span>
@@ -59,10 +69,22 @@ function Icon({ name, size = 16, className = "", style = {} }) {
 
 const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700;900&family=Noto+Sans+TC:wght@400;500;700&display=swap');`;
 
+/* 命名依「用途 + 實際顏色」，不再出現 cream 其實是深藍、violet 其實是藍色這種誤導。
+   文字色都以 WCAG AA（一般文字 4.5:1）對 #EAF6FF 與 #FFFFFF 兩種底色驗算過；
+   xxxFill 是拿來當底色的版本，與其上的文字另外配對驗算。 */
 const COLORS = {
-  bg: "#EAF6FF", bg2: "#FFFFFF", card: "#FFFFFF", cardEdge: "#E63946",
-  gold: "#FFC93C", goldDim: "#B8860B", cream: "#1B3A4B", creamDim: "#5A7A94", violet: "#457B9D",
-  pink: "#F25C9A",
+  bg: "#EAF6FF",        // 頁面底色（淺藍）
+  panel: "#FFFFFF",     // 卡片／面板底色
+  cardFace: "#FFFFFF",  // 翻牌正面
+  ink: "#1B3A4B",       // 主要文字（深藍）        對底色 10.91
+  inkSoft: "#55738B",   // 次要文字（灰藍）        對底色 4.54
+  amber: "#906909",     // 強調文字／數字（深金）  對底色 4.54
+  amberFill: "#B8860B", // 深金底（配 #1A1420，5.54）
+  red: "#CF333F",       // 警告文字與邊框；當底色時配白字（5.00）
+  yellow: "#FFC93C",    // 主要按鈕底色（配 #241A14，11.09）
+  blue: "#457B9D",      // 邊框（非文字，門檻 3.0）
+  pink: "#B84675",      // 粉色文字／邊框          對底色 4.59
+  pinkFill: "#F25C9A",  // 反白列底色（配 #241A14，5.49）
 };
 
 const DEFAULT_CARDS = [
@@ -324,14 +346,14 @@ function isFirstStage(activity, current) { return STAGE_FLOW[activity].indexOf(c
 function FlipCard({ label, faceLabel, revealed, children, accent, small }) {
   return (
     <div className="flex flex-col items-center gap-3 w-full">
-      <span className="text-xs tracking-[0.3em] uppercase text-center" style={{ color: COLORS.creamDim, fontFamily: "'Noto Sans TC', sans-serif" }}>{label}</span>
+      <span className="text-xs tracking-[0.3em] uppercase text-center" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Sans TC', sans-serif" }}>{label}</span>
       <div className={`relative w-full max-w-xs ${small ? "h-36" : "h-52"}`} style={{ perspective: "1200px" }}>
         <div className="absolute inset-0 transition-transform duration-700" style={{ transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d", transform: revealed ? "rotateY(0deg)" : "rotateY(180deg)" }}>
-          <div className="absolute inset-0 rounded-2xl flex items-center justify-center p-5 text-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", background: COLORS.card, border: `3px solid ${accent}`, boxShadow: "0 12px 30px rgba(0,0,0,0.45)" }}>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center p-5 text-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", background: COLORS.cardFace, border: `3px solid ${accent}`, boxShadow: "0 12px 30px rgba(0,0,0,0.45)" }}>
             {children}
           </div>
-          <div className="absolute inset-0 rounded-2xl flex items-center justify-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `repeating-linear-gradient(135deg, ${COLORS.violet} 0px, ${COLORS.violet} 10px, ${COLORS.bg} 10px, ${COLORS.bg} 20px)`, border: `3px solid ${COLORS.violet}`, boxShadow: "0 12px 30px rgba(0,0,0,0.3)" }}>
-            <span className="text-3xl font-black tracking-widest" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{faceLabel}</span>
+          <div className="absolute inset-0 rounded-2xl flex items-center justify-center" style={{ backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", background: `repeating-linear-gradient(135deg, ${COLORS.blue} 0px, ${COLORS.blue} 10px, ${COLORS.bg} 10px, ${COLORS.bg} 20px)`, border: `3px solid ${COLORS.blue}`, boxShadow: "0 12px 30px rgba(0,0,0,0.3)" }}>
+            <span className="text-3xl font-black tracking-widest" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{faceLabel}</span>
           </div>
         </div>
       </div>
@@ -345,9 +367,9 @@ function SituationList({ scenarios, activeNumber }) {
       {scenarios.map((s, i) => {
         const n = i + 1, active = activeNumber === n;
         return (
-          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all" style={{ background: active ? COLORS.pink : COLORS.bg2, border: `1px solid ${active ? COLORS.pink : COLORS.violet}` }}>
-            <span className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0" style={{ background: active ? "#241A14" : COLORS.goldDim, color: active ? COLORS.pink : "#1A1420" }}>{n}</span>
-            <span className="text-sm leading-snug" style={{ color: active ? "#241A14" : COLORS.creamDim, fontWeight: active ? 700 : 400 }}>{s || "（尚未填寫）"}</span>
+          <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-xl transition-all" style={{ background: active ? COLORS.pinkFill : COLORS.panel, border: `1px solid ${active ? COLORS.pinkFill : COLORS.blue}` }}>
+            <span className="w-6 h-6 flex items-center justify-center rounded-full text-xs font-black shrink-0" style={{ background: active ? "#241A14" : COLORS.amberFill, color: active ? COLORS.pinkFill : "#1A1420" }}>{n}</span>
+            <span className="text-sm leading-snug" style={{ color: active ? "#241A14" : COLORS.inkSoft, fontWeight: active ? 700 : 400 }}>{s || "（尚未填寫）"}</span>
           </div>
         );
       })}
@@ -358,12 +380,12 @@ function SituationList({ scenarios, activeNumber }) {
 function GroupSelectScreen({ totalGroups, onSelect }) {
   return (
     <div className="text-center py-8">
-      <Icon name="Users" size={26} style={{ color: COLORS.goldDim, margin: "0 auto 12px" }} />
-      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>選擇你的小隊</h2>
-      <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>請選擇你所屬的小隊（跟同小隊的夥伴選同一隊）</p>
+      <Icon name="Users" size={26} style={{ color: COLORS.amber, margin: "0 auto 12px" }} />
+      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>選擇你的小隊</h2>
+      <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>請選擇你所屬的小隊（跟同小隊的夥伴選同一隊）</p>
       <div className="grid grid-cols-3 gap-3 max-w-xs mx-auto">
         {Array.from({ length: totalGroups }, (_, i) => i + 1).map((n) => (
-          <button key={n} onClick={() => onSelect(n)} className="aspect-square rounded-2xl text-xl font-black flex items-center justify-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.pink}`, color: COLORS.pink }}>{n}</button>
+          <button key={n} onClick={() => onSelect(n)} aria-label={`我是第 ${n} 小隊`} className="aspect-square rounded-2xl text-xl font-black flex items-center justify-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.pink}`, color: COLORS.pink }}>{n}</button>
         ))}
       </div>
     </div>
@@ -373,12 +395,12 @@ function GroupSelectScreen({ totalGroups, onSelect }) {
 function StoryScreen({ text, chapter, buttonLabel, onNext, showButton, children }) {
   return (
     <div className="text-center py-6">
-      <Icon name="BookOpen" size={22} style={{ color: COLORS.goldDim, margin: "0 auto 12px" }} />
-      <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>{chapter}</div>
-      <p className="text-sm leading-loose max-w-md mx-auto mb-8" style={{ color: COLORS.creamDim, fontFamily: "'Noto Serif TC', serif" }}>{text}</p>
+      <Icon name="BookOpen" size={22} style={{ color: COLORS.amber, margin: "0 auto 12px" }} />
+      <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>{chapter}</div>
+      <p className="text-sm leading-loose max-w-md mx-auto mb-8" style={{ color: COLORS.inkSoft, fontFamily: "'Noto Serif TC', serif" }}>{text}</p>
       {children}
       {showButton && (
-        <button onClick={onNext} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={onNext} className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {buttonLabel} <Icon name="ChevronRight" size={16} />
         </button>
       )}
@@ -389,21 +411,21 @@ function StoryScreen({ text, chapter, buttonLabel, onNext, showButton, children 
 function ActivitySelectScreen({ onSelect }) {
   return (
     <div className="text-center py-8">
-      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>選擇今天要進行的活動</h2>
-      <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>不同活動有不同的故事與小遊戲流程</p>
+      <h2 className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>選擇今天要進行的活動</h2>
+      <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>不同活動有不同的故事與小遊戲流程</p>
       <div className="flex flex-col gap-4 max-w-sm mx-auto">
-        <button onClick={() => onSelect("star")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.gold}` }}>
-          <Icon name="Sparkles" size={26} style={{ color: COLORS.goldDim }} />
+        <button onClick={() => onSelect("star")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.panel, border: `1px solid ${COLORS.yellow}` }}>
+          <Icon name="Sparkles" size={26} style={{ color: COLORS.amber }} />
           <div>
-            <div className="font-bold" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>星攻略</div>
-            <div className="text-xs" style={{ color: COLORS.creamDim }}>皮克敏迫降 → 偽裝洞穴（2 個小遊戲）</div>
+            <div className="font-bold" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>星攻略</div>
+            <div className="text-xs" style={{ color: COLORS.inkSoft }}>皮克敏迫降 → 偽裝洞穴（2 個小遊戲）</div>
           </div>
         </button>
-        <button onClick={() => onSelect("training")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.cardEdge}` }}>
-          <Icon name="GraduationCap" size={26} style={{ color: COLORS.cardEdge }} />
+        <button onClick={() => onSelect("training")} className="flex items-center gap-4 p-5 rounded-2xl text-left" style={{ background: COLORS.panel, border: `1px solid ${COLORS.red}` }}>
+          <Icon name="GraduationCap" size={26} style={{ color: COLORS.red }} />
           <div>
-            <div className="font-bold" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>培訓</div>
-            <div className="text-xs" style={{ color: COLORS.creamDim }}>皮克敏迫降 → 情報交換 → 偽裝洞穴（3 個小遊戲）</div>
+            <div className="font-bold" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>培訓</div>
+            <div className="text-xs" style={{ color: COLORS.inkSoft }}>皮克敏迫降 → 情報交換 → 偽裝洞穴（3 個小遊戲）</div>
           </div>
         </button>
       </div>
@@ -431,17 +453,17 @@ function StoryEditor({ activity, storyText, onSave, onCancel }) {
     <div>
       {slots.map((k) => (
         <div key={k}>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>編輯{labels[k]}</div>
-          <textarea value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} rows={5} className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>編輯{labels[k]}</div>
+          <textarea value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} rows={5} className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-5" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
         </div>
       ))}
-      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.goldDim }}>✓ 已儲存，其他裝置重新整理後會看到最新內容。</div>}
-      {status === "fail" && <div className="text-xs mb-3" style={{ color: COLORS.cardEdge }}>✕ 儲存失敗，請檢查網路連線後再試一次。</div>}
+      {status === "ok" && <div className="text-xs mb-3" style={{ color: COLORS.amber }}>✓ 已儲存，其他裝置重新整理後會看到最新內容。</div>}
+      {status === "fail" && <div className="text-xs mb-3" style={{ color: COLORS.red }}>✕ 儲存失敗，請檢查網路連線後再試一次。</div>}
       <div className="flex gap-3">
-        <button onClick={handleSave} disabled={status === "saving"} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-60" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={handleSave} disabled={status === "saving"} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-60" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {status === "saving" ? "儲存中…" : "儲存"}
         </button>
-        <button onClick={onCancel} className="px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>返回</button>
+        <button onClick={onCancel} className="px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>返回</button>
       </div>
     </div>
   );
@@ -459,41 +481,41 @@ function RoomCodePanel({ room, roomReal, totalGroups, onChangeTotal, defaultOpen
   /* 收合狀態：後面幾關仍然看得到代碼（遲到的人隨時能加入），但不佔滿畫面。 */
   if (!open) {
     return (
-      <div className="rounded-xl px-4 py-2 mb-5 flex items-center justify-center gap-3 flex-wrap" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
-        <span className="text-xs" style={{ color: COLORS.creamDim }}>房間代碼</span>
-        <span className="text-lg font-black tracking-widest" style={{ color: roomReal === false ? COLORS.creamDim : COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
-        <button onClick={copyCode} disabled={!room} aria-label="複製房間代碼" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+      <div className="rounded-xl px-4 py-2 mb-5 flex items-center justify-center gap-3 flex-wrap" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+        <span className="text-xs" style={{ color: COLORS.inkSoft }}>房間代碼</span>
+        <span className="text-lg font-black tracking-widest" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</span>
+        <button onClick={copyCode} disabled={!room} aria-label="複製房間代碼" className="px-3 py-1 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {copied ? "已複製！" : "複製"}
         </button>
-        <button onClick={() => setOpen(true)} className="text-xs underline" style={{ color: COLORS.creamDim }}>展開</button>
+        <button onClick={() => setOpen(true)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>展開</button>
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
-      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>
+    <div className="rounded-2xl p-5 mb-6 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+      <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>
         <Icon name="KeyRound" size={13} /> 皮克敏加入
       </div>
       <div className="flex items-center justify-center gap-3 mb-4">
-        <span className="text-xs" style={{ color: COLORS.creamDim }}>總共分成幾小隊</span>
-        <button onClick={() => onChangeTotal(-1)} className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>−</button>
-        <span className="text-2xl font-black w-10" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
-        <button onClick={() => onChangeTotal(1)} className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>＋</button>
+        <span className="text-xs" style={{ color: COLORS.inkSoft }}>總共分成幾小隊</span>
+        <button onClick={() => onChangeTotal(-1)} aria-label="小隊數量減一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+        <span className="text-2xl font-black w-10" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{totalGroups}</span>
+        <button onClick={() => onChangeTotal(1)} aria-label="小隊數量加一" className="w-8 h-8 rounded-full text-lg font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
       </div>
       {roomReal === false ? (
-        <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.cardEdge, background: "#EAF6FF", border: `1px solid ${COLORS.cardEdge}` }}>
+        <div className="text-xs mb-2 px-3 py-2 rounded-lg" style={{ color: COLORS.red, background: "#EAF6FF", border: `1px solid ${COLORS.red}` }}>
           ⚠ 目前連不上同步伺服器，下面這組代碼不是真的房間，皮克敏輸入也一定會顯示「代碼不正確」。請改用「測試：進入皮克敏介面」在同一台裝置測試，或部署成獨立 HTML 到 GitHub Pages 後在正式網址測試。
         </div>
       ) : (
-        <div className="text-xs mb-2" style={{ color: COLORS.creamDim }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
+        <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>請大家打開這個網頁，點「我是皮克敏」，輸入這組房間代碼：</div>
       )}
-      <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.creamDim : COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
+      <div className="text-4xl font-black tracking-widest mb-3" style={{ color: roomReal === false ? COLORS.inkSoft : COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{room || "…"}</div>
       <div className="flex items-center justify-center gap-3 flex-wrap">
-        <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={copyCode} disabled={!room} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           <Icon name="Copy" size={13} /> {copied ? "已複製！" : "複製房間代碼"}
         </button>
-        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline" style={{ color: COLORS.creamDim }}>收合</button>}
+        {!defaultOpen && <button onClick={() => setOpen(false)} className="text-xs underline" style={{ color: COLORS.inkSoft }}>收合</button>}
       </div>
     </div>
   );
@@ -505,12 +527,12 @@ function PlayerJoinScreen({ onJoin, joining, error }) {
     <div className="min-h-screen flex items-center justify-center px-6" style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
       <style>{FONT_IMPORT}</style>
       <div className="max-w-sm w-full text-center">
-        <Icon name="Drama" size={30} style={{ color: COLORS.cardEdge, margin: "0 auto 10px" }} />
-        <h1 className="text-2xl font-black mb-1" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>加入遊戲</h1>
-        <p className="text-xs mb-6" style={{ color: COLORS.creamDim }}>請輸入指揮官給你的房間代碼</p>
-        <input value={code} onChange={(e) => setCode(e.target.value.trim())} placeholder="房間代碼" className="w-full text-center text-xl tracking-widest px-4 py-3 rounded-xl outline-none mb-4" style={{ background: COLORS.bg2, color: COLORS.cream, border: `1px solid ${COLORS.gold}` }} />
-        {error && <div className="text-xs mb-3" style={{ color: COLORS.cardEdge }}>{error}</div>}
-        <button onClick={() => onJoin(code)} disabled={!code || joining} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <Icon name="Drama" size={30} style={{ color: COLORS.red, margin: "0 auto 10px" }} />
+        <h1 className="text-2xl font-black mb-1" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>加入遊戲</h1>
+        <p className="text-xs mb-6" style={{ color: COLORS.inkSoft }}>請輸入指揮官給你的房間代碼</p>
+        <input value={code} onChange={(e) => setCode(e.target.value.trim())} aria-label="房間代碼" placeholder="房間代碼" className="w-full text-center text-xl tracking-widest px-4 py-3 rounded-xl outline-none mb-4" style={{ background: COLORS.panel, color: COLORS.ink, border: `1px solid ${COLORS.yellow}` }} />
+        {error && <div className="text-xs mb-3" style={{ color: COLORS.red }}>{error}</div>}
+        <button onClick={() => onJoin(code)} disabled={!code || joining} className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           {joining ? "加入中…" : "加入遊戲"}
         </button>
       </div>
@@ -562,68 +584,68 @@ function CellHostView({ state, pushState, activity }) {
 
   return (
     <div>
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         這個畫面只給指揮官自己看／投影用，不需要皮克敏連線。實際的集合行動在現場真人進行，這裡負責顯示目前需要的皮克敏數量、倒數計時與音樂。
       </p>
 
-      <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>目前需要集合的皮克敏數量</div>
+      <div className="rounded-2xl p-5 mb-5 text-center" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的皮克敏數量</div>
         <div className="flex items-center justify-center gap-4 mb-3">
-          <button onClick={() => adjustTarget(-1)} className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>−</button>
-          <span className="text-6xl font-black w-24" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</span>
-          <button onClick={() => adjustTarget(1)} className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}>＋</button>
+          <button onClick={() => adjustTarget(-1)} aria-label="集合人數減一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>−</button>
+          <span className="text-6xl font-black w-24" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</span>
+          <button onClick={() => adjustTarget(1)} aria-label="集合人數加一" className="w-10 h-10 rounded-full text-xl font-bold" style={{ background: COLORS.bg, color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}>＋</button>
         </div>
-        <button onClick={randomizeTarget} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+        <button onClick={randomizeTarget} className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-bold" style={{ background: COLORS.red, color: "#FFFFFF" }}>
           <Icon name="Dices" size={13} /> 隨機變換人數
         </button>
       </div>
 
-      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
           <Icon name="TimerIcon" size={13} /> 遊戲倒數
         </div>
         <div className="text-center mb-3">
-          <span className="text-5xl font-black" style={{ color: timeUp ? COLORS.cardEdge : COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</span>
-          {timeUp && <div className="text-sm font-bold mt-1" style={{ color: COLORS.cardEdge }}>時間到！還沒集合成功的皮克敏出局</div>}
+          <span className="text-5xl font-black" style={{ color: timeUp ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</span>
+          {timeUp && <div className="text-sm font-bold mt-1" style={{ color: COLORS.red }}>時間到！還沒集合成功的皮克敏出局</div>}
         </div>
         {!state.timerRunning && (
           <div className="flex gap-2 justify-center mb-3 flex-wrap">
             {[60, 120, 180, 300].map((sec) => (
-              <button key={sec} onClick={() => setPreset(sec)} className="px-3 py-1 rounded-full text-xs" style={{ border: `1px solid ${COLORS.goldDim}`, color: COLORS.creamDim }}>{formatTime(sec)}</button>
+              <button key={sec} onClick={() => setPreset(sec)} className="px-3 py-1 rounded-full text-xs" style={{ border: `1px solid ${COLORS.amber}`, color: COLORS.inkSoft }}>{formatTime(sec)}</button>
             ))}
           </div>
         )}
         <div className="flex gap-3 justify-center">
           {!state.timerRunning ? (
-            <button onClick={startTimer} disabled={remaining <= 0} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+            <button onClick={startTimer} disabled={remaining <= 0} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
               <Icon name="Play" size={15} /> 開始
             </button>
           ) : (
-            <button onClick={pauseTimer} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+            <button onClick={pauseTimer} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
               <Icon name="Pause" size={15} /> 暫停
             </button>
           )}
-          <button onClick={resetTimer} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>
+          <button onClick={resetTimer} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
             <Icon name="RotateCcw" size={14} /> 重置
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
           <Icon name="Music" size={13} /> 背景音樂（僅播放於此裝置）
         </div>
         <input ref={fileInputRef} type="file" accept="audio/*" className="hidden" onChange={handleFile} />
         <audio ref={audioRef} onEnded={() => setPlaying(false)} />
         <div className="flex items-center gap-3 justify-center">
-          <button onClick={toggleMusic} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+          <button onClick={toggleMusic} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-sm" style={{ background: COLORS.red, color: "#FFFFFF" }}>
             {playing ? <Icon name="Pause" size={15} /> : <Icon name="Play" size={15} />} {audioName ? (playing ? "暫停" : "播放") : "選擇音樂檔案"}
           </button>
-          {audioName && <span className="text-xs truncate max-w-[140px]" style={{ color: COLORS.creamDim }}>{audioName}</span>}
+          {audioName && <span className="text-xs truncate max-w-[140px]" style={{ color: COLORS.inkSoft }}>{audioName}</span>}
         </div>
       </div>
 
-      <button onClick={() => pushState({ ...state, stage: nextStage(activity, "cell") })} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.goldDim }}>
+      <button onClick={() => pushState({ ...state, stage: nextStage(activity, "cell") })} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.amber }}>
         前往下一關 <Icon name="ChevronRight" size={16} />
       </button>
     </div>
@@ -634,17 +656,17 @@ function CellPlayerView({ state }) {
   const remaining = useRemainingSeconds(state);
   return (
     <div className="text-center py-4">
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>跟著現場指揮官一起完成「皮克敏迫降」——找到足夠的同伴集合成隊，別被掠食者抓走！</p>
-      <div className="rounded-2xl p-6 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>目前需要集合的數量</div>
-        <div className="text-7xl font-black mb-1" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
-        <div className="text-xs" style={{ color: COLORS.creamDim }}>快找到這個數量的同伴，聚在一起集合成隊！</div>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>跟著現場指揮官一起完成「皮克敏迫降」——找到足夠的同伴集合成隊，別被掠食者抓走！</p>
+      <div className="rounded-2xl p-6 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>目前需要集合的數量</div>
+        <div className="text-7xl font-black mb-1" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{state.cellTarget}</div>
+        <div className="text-xs" style={{ color: COLORS.inkSoft }}>快找到這個數量的同伴，聚在一起集合成隊！</div>
       </div>
-      <div className="rounded-2xl p-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.creamDim }}>
+      <div className="rounded-2xl p-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="flex items-center justify-center gap-1.5 text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.inkSoft }}>
           <Icon name="TimerIcon" size={13} /> 剩餘時間
         </div>
-        <div className="text-5xl font-black" style={{ color: remaining <= 0 ? COLORS.cardEdge : COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
+        <div className="text-5xl font-black" style={{ color: remaining <= 0 ? COLORS.red : COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>{formatTime(remaining)}</div>
       </div>
     </div>
   );
@@ -654,16 +676,16 @@ function CellPlayerView({ state }) {
 function GroupProgress({ takenNumbers, totalGroups, poolSize }) {
   const groups = Array.from({ length: totalGroups }, (_, i) => i + 1);
   return (
-    <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-      <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>
+    <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>
         <Icon name="Users" size={13} /> 各小隊抽取進度（不會顯示是誰抽了哪個情境）
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {groups.map((g) => {
           const count = Object.keys((takenNumbers && takenNumbers[g]) || {}).length;
           return (
-            <div key={g} className="text-xs px-3 py-1.5 rounded-lg text-center" style={{ background: "#EAF6FF", color: COLORS.creamDim, border: `1px solid ${COLORS.goldDim}` }}>
-              第 {g} 小隊　<span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{count}/{poolSize}</span>
+            <div key={g} className="text-xs px-3 py-1.5 rounded-lg text-center" style={{ background: "#EAF6FF", color: COLORS.inkSoft, border: `1px solid ${COLORS.amber}` }}>
+              第 {g} 小隊　<span style={{ color: COLORS.amber, fontWeight: 700 }}>{count}/{poolSize}</span>
             </div>
           );
         })}
@@ -699,35 +721,35 @@ function BarHostView({ cards, state, pushState, pushCards }) {
   return (
     <>
       <div className="flex justify-end mb-4">
-        <button onClick={() => setMode(mode === "game" ? "edit" : "game")} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full transition-colors" style={{ color: mode === "edit" ? COLORS.bg : COLORS.creamDim, background: mode === "edit" ? COLORS.gold : "transparent", border: `1px solid ${mode === "edit" ? COLORS.gold : COLORS.violet}` }}>
+        <button onClick={() => setMode(mode === "game" ? "edit" : "game")} className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-full transition-colors" style={{ color: mode === "edit" ? COLORS.bg : COLORS.inkSoft, background: mode === "edit" ? COLORS.yellow : "transparent", border: `1px solid ${mode === "edit" ? COLORS.yellow : COLORS.blue}` }}>
           <Icon name="Settings2" size={14} /> {mode === "edit" ? "回到遊戲" : "編輯任務卡"}
         </button>
       </div>
 
       {mode === "game" ? (
         <>
-          <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+          <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
             抽出任務卡後會列出卡片上全部的偽裝情境，交給皮克敏在自己的頁面抽情境牌。目前任務卡池共 {cards.length} 張：{cards.map((c) => c.line).join("、") || "（無）"}
           </p>
 
           <div className="flex justify-center mb-6">
-            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed && !flipping} accent={COLORS.cardEdge} small>
+            <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={state.cardRevealed && !flipping} accent={COLORS.red} small>
               {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
             </FlipCard>
           </div>
 
           <div className="flex flex-wrap gap-3 justify-center mb-8">
-            <button onClick={drawCard} disabled={cards.length === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+            <button onClick={drawCard} disabled={cards.length === 0} className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.red, color: "#FFFFFF" }}>
               <Icon name="Shuffle" size={16} /> 抽任務卡
             </button>
-            <button onClick={resetDraw} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}>
+            <button onClick={resetDraw} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
               <Icon name="RotateCcw" size={14} /> 重置
             </button>
           </div>
 
           {currentCard && (
             <div className="mb-8">
-              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 {poolSize} 種，指揮官不會看到誰抽到哪個）</div>
+              <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，指揮官不會看到誰抽到哪個）</div>
               <SituationList scenarios={currentCard.scenarios} activeNumber={null} />
             </div>
           )}
@@ -736,25 +758,25 @@ function BarHostView({ cards, state, pushState, pushCards }) {
         </>
       ) : (
         <div className="space-y-5">
-          <p className="text-sm" style={{ color: COLORS.creamDim }}>每張任務卡包含皮克敏要喊出的暗號，以及對應情境牌 1–8 號的偽裝情境描述。編輯後會同步給皮克敏。</p>
+          <p className="text-sm" style={{ color: COLORS.inkSoft }}>每張任務卡包含皮克敏要喊出的暗號，以及對應情境牌 1–8 號的偽裝情境描述。編輯後會同步給皮克敏。</p>
           {cards.map((card, idx) => (
-            <div key={card.id} className="rounded-2xl p-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
+            <div key={card.id} className="rounded-2xl p-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs shrink-0" style={{ color: COLORS.creamDim }}>暗號</span>
-                <input value={card.line} onChange={(e) => updateLine(idx, e.target.value)} placeholder="皮克敏要喊出的暗號" className="flex-1 px-3 py-2 rounded-lg text-sm font-bold outline-none" style={{ background: COLORS.card, color: "#241A14", fontFamily: "'Noto Serif TC', serif" }} />
-                <button onClick={() => deleteCard(idx)} style={{ color: COLORS.cardEdge }}><Icon name="Trash2" size={18} /></button>
+                <span className="text-xs shrink-0" style={{ color: COLORS.inkSoft }}>暗號</span>
+                <input value={card.line} onChange={(e) => updateLine(idx, e.target.value)} aria-label="皮克敏要喊出的暗號" placeholder="皮克敏要喊出的暗號" className="flex-1 px-3 py-2 rounded-lg text-sm font-bold outline-none" style={{ background: COLORS.cardFace, color: "#241A14", fontFamily: "'Noto Serif TC', serif" }} />
+                <button onClick={() => deleteCard(idx)} aria-label="刪除這張任務卡" title="刪除這張任務卡" style={{ color: COLORS.red }}><Icon name="Trash2" size={18} /></button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {card.scenarios.map((s, si) => (
                   <div key={si} className="flex items-center gap-2">
-                    <span className="w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold shrink-0" style={{ background: COLORS.gold, color: "#241A14" }}>{si + 1}</span>
-                    <input value={s} onChange={(e) => updateScenario(idx, si, e.target.value)} placeholder={`第 ${si + 1} 號偽裝情境描述`} className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+                    <span className="w-5 h-5 flex items-center justify-center rounded-full text-xs font-bold shrink-0" style={{ background: COLORS.yellow, color: "#241A14" }}>{si + 1}</span>
+                    <input value={s} onChange={(e) => updateScenario(idx, si, e.target.value)} aria-label={`第 ${si + 1} 號偽裝情境描述`} placeholder={`第 ${si + 1} 號偽裝情境描述`} className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
                   </div>
                 ))}
               </div>
             </div>
           ))}
-          <button onClick={addCard} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold w-full justify-center" style={{ border: `1px dashed ${COLORS.gold}`, color: COLORS.goldDim }}>
+          <button onClick={addCard} className="flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-bold w-full justify-center" style={{ border: `1px dashed ${COLORS.yellow}`, color: COLORS.amber }}>
             <Icon name="Plus" size={16} /> 新增任務卡
           </button>
         </div>
@@ -806,33 +828,33 @@ function BarPlayerView({ cards, state, claimScenario, myGroup, myId }) {
     <>
       {myGroup && (
         <div className="text-center mb-4">
-          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: COLORS.bg2, color: COLORS.pink, border: `1px solid ${COLORS.pink}` }}>你的小隊：第 {myGroup} 小隊</span>
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: COLORS.panel, color: COLORS.pink, border: `1px solid ${COLORS.pink}` }}>你的小隊：第 {myGroup} 小隊</span>
         </div>
       )}
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         {currentCard ? "指揮官已抽出任務卡，換你抽情境牌——結果只有你看得到，別讓同小隊的人知道！" : "等待指揮官抽出任務卡…（畫面會自動同步，請稍候）"}
       </p>
 
       <div className="flex justify-center mb-6">
-        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed && !flipping} accent={COLORS.cardEdge} small>
+        <FlipCard label="任務卡 · 暗號" faceLabel="題" revealed={!!currentCard && state.cardRevealed && !flipping} accent={COLORS.red} small>
           {currentCard && <span className="text-2xl font-black leading-snug" style={{ color: "#241A14", fontFamily: "'Noto Serif TC', serif" }}>「{currentCard.line}」</span>}
         </FlipCard>
       </div>
 
       <div className="flex flex-col items-center gap-2 mb-8">
-        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={drawNumber} disabled={!currentCard || myNumber !== null || noneLeft || drawing || poolSize === 0} className="flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.yellow, color: "#241A14" }}>
           <Icon name="Shuffle" size={16} /> {drawing ? "抽牌中…" : (myNumber !== null ? "已抽過（本輪只能抽一次）" : "抽情境牌")}
         </button>
-        {!currentCard && <span className="text-xs" style={{ color: COLORS.creamDim }}>指揮官抽出任務卡後即可使用</span>}
-        {currentCard && poolSize === 0 && <span className="text-xs" style={{ color: COLORS.cardEdge }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
-        {noneLeft && <span className="text-xs" style={{ color: COLORS.cardEdge }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
-        {failed && <span className="text-xs" style={{ color: COLORS.cardEdge }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
-        {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
+        {!currentCard && <span className="text-xs" style={{ color: COLORS.inkSoft }}>指揮官抽出任務卡後即可使用</span>}
+        {currentCard && poolSize === 0 && <span className="text-xs" style={{ color: COLORS.red }}>這張任務卡還沒有填寫任何情境，請指揮官先編輯。</span>}
+        {noneLeft && <span className="text-xs" style={{ color: COLORS.red }}>本小隊 {poolSize} 種情境已經被抽完了</span>}
+        {failed && <span className="text-xs" style={{ color: COLORS.red }}>同步失敗，沒有抽到牌，請確認網路後再按一次。</span>}
+        {myNumber !== null && <span className="text-3xl font-black mt-2" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>第 {myNumber} 號（只有你看得到）</span>}
       </div>
 
       {currentCard && (
         <div>
-          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>全部偽裝情境（共 {poolSize} 種，你的那項會反白，其他人看不到）</div>
+          <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>全部偽裝情境（共 {poolSize} 種，你的那項會反白，其他人看不到）</div>
           <SituationList scenarios={currentCard.scenarios} activeNumber={myNumber} />
         </div>
       )}
@@ -863,19 +885,19 @@ function TtolHostView({ state, pushState }) {
 
   return (
     <div>
-      <p className="text-sm mb-6" style={{ color: COLORS.creamDim }}>
+      <p className="text-sm mb-6" style={{ color: COLORS.inkSoft }}>
         每個人先在自己手機上填寫情報並提交，全部人（或大部分人）填完後按下方按鈕開始「情報判讀」環節——大家會同時在自己手機上，各自判讀自己小隊內其他每一位夥伴，不用輪流等待。
       </p>
 
-      <div className="rounded-2xl p-4 mb-5" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.creamDim }}>已提交名單（依小隊）</div>
-        {Object.keys(byGroup).length === 0 && <div className="text-xs" style={{ color: COLORS.creamDim, opacity: 0.7 }}>目前還沒有人提交。</div>}
+      <div className="rounded-2xl p-4 mb-5" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+        <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.inkSoft }}>已提交名單（依小隊）</div>
+        {Object.keys(byGroup).length === 0 && <div className="text-xs" style={{ color: COLORS.inkSoft, opacity: 0.7 }}>目前還沒有人提交。</div>}
         {Object.entries(byGroup).map(([g, list]) => (
           <div key={g} className="mb-2">
-            <div className="text-xs font-bold mb-1" style={{ color: COLORS.goldDim }}>第 {g} 小隊（{list.length} 人）</div>
+            <div className="text-xs font-bold mb-1" style={{ color: COLORS.amber }}>第 {g} 小隊（{list.length} 人）</div>
             <div className="flex flex-wrap gap-1.5">
               {list.map((p) => (
-                <span key={p.id} className="text-xs px-2 py-1 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.creamDim, border: `1px solid ${COLORS.goldDim}` }}>{p.nickname || p.name}</span>
+                <span key={p.id} className="text-xs px-2 py-1 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.inkSoft, border: `1px solid ${COLORS.amber}` }}>{p.nickname || p.name}</span>
               ))}
             </div>
           </div>
@@ -883,31 +905,31 @@ function TtolHostView({ state, pushState }) {
       </div>
 
       {ttol.phase === "writing" && (
-        <button onClick={startGuessing} disabled={profiles.length === 0} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40 mb-6" style={{ background: COLORS.gold, color: "#241A14" }}>
+        <button onClick={startGuessing} disabled={profiles.length === 0} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40 mb-6" style={{ background: COLORS.yellow, color: "#241A14" }}>
           大家自我介紹完了，開始情報判讀
         </button>
       )}
 
       {ttol.phase === "guessing" && (
-        <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.goldDim}` }}>
-          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.goldDim }}>情報判讀進度（不會顯示是誰判讀的、選了什麼）</div>
+        <div className="rounded-2xl p-4 mb-6" style={{ background: COLORS.panel, border: `1px solid ${COLORS.amber}` }}>
+          <div className="text-xs uppercase tracking-widest mb-3" style={{ color: COLORS.amber }}>情報判讀進度（不會顯示是誰判讀的、選了什麼）</div>
           <div className="space-y-1.5 mb-2">
             {profiles.map(([id, p]) => {
               const t = tallyFor(id);
               return (
-                <div key={id} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg" style={{ background: "#EAF6FF", border: `1px solid ${COLORS.violet}` }}>
-                  <span style={{ color: COLORS.creamDim }}>第{p.group}小隊・{p.nickname || p.name}</span>
+                <div key={id} className="flex items-center justify-between text-xs px-3 py-2 rounded-lg" style={{ background: "#EAF6FF", border: `1px solid ${COLORS.blue}` }}>
+                  <span style={{ color: COLORS.inkSoft }}>第{p.group}小隊・{p.nickname || p.name}</span>
                   <span>
-                    <span style={{ color: COLORS.goldDim, fontWeight: 700 }}>判讀成功 {t.correct}</span>　
-                    <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>判讀失敗 {t.wrong}</span>
-                    {t.waiting > 0 && <span className="ml-1" style={{ color: COLORS.creamDim }}>　待確認 {t.waiting}</span>}
-                    {t.wrong > 0 && t.correct === 0 && <span className="ml-1" style={{ color: COLORS.cardEdge }}>（目前全員尚未判讀成功）</span>}
+                    <span style={{ color: COLORS.amber, fontWeight: 700 }}>判讀成功 {t.correct}</span>　
+                    <span style={{ color: COLORS.red, fontWeight: 700 }}>判讀失敗 {t.wrong}</span>
+                    {t.waiting > 0 && <span className="ml-1" style={{ color: COLORS.inkSoft }}>　待確認 {t.waiting}</span>}
+                    {t.wrong > 0 && t.correct === 0 && <span className="ml-1" style={{ color: COLORS.red }}>（目前全員尚未判讀成功）</span>}
                   </span>
                 </div>
               );
             })}
           </div>
-          <button onClick={finishTtol} className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.goldDim }}>
+          <button onClick={finishTtol} className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm" style={{ border: `1px solid ${COLORS.yellow}`, color: COLORS.amber }}>
             情報交換結束，前往下一關 <Icon name="ChevronRight" size={16} />
           </button>
         </div>
@@ -938,33 +960,33 @@ function TtolWriteForm({ myGroup, onSubmit }) {
 
   return (
     <div>
-      <p className="text-sm mb-5" style={{ color: COLORS.creamDim }}>填寫你的情報，還有四則關於你的事——三則真的、一則是你編出來的假情報，等一下讓同小隊夥伴判讀。</p>
+      <p className="text-sm mb-5" style={{ color: COLORS.inkSoft }}>填寫你的情報，還有四則關於你的事——三則真的、一則是你編出來的假情報，等一下讓同小隊夥伴判讀。</p>
       <div className="space-y-3 mb-4">
-        <input value={school} onChange={(e) => setSchool(e.target.value)} placeholder="所屬基地" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="代號" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
-        <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="暱稱" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }} />
+        <input value={school} onChange={(e) => setSchool(e.target.value)} aria-label="所屬基地" placeholder="所屬基地" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
+        <input value={name} onChange={(e) => setName(e.target.value)} aria-label="代號" placeholder="代號" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
+        <input value={nickname} onChange={(e) => setNickname(e.target.value)} aria-label="暱稱" placeholder="暱稱" className="w-full px-3 py-2 rounded-lg text-sm outline-none" style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }} />
       </div>
-      <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.goldDim }}>四則情報（點選單選鈕標記哪一則是假的）</div>
+      <div className="text-xs uppercase tracking-widest mb-2" style={{ color: COLORS.amber }}>四則情報（點選單選鈕標記哪一則是假的）</div>
       <div className="space-y-2 mb-5">
         {statements.map((s, i) => (
           <div key={i} className="flex items-center gap-2">
-            <input type="radio" name="lie" checked={lieIndex === i} onChange={() => setLieIndex(i)} />
+            <input type="radio" name="lie" aria-label={`把第 ${i + 1} 則標記為假情報`} checked={lieIndex === i} onChange={() => setLieIndex(i)} />
             <input
               value={s}
               onChange={(e) => setStatements((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))}
-              placeholder={`第 ${i + 1} 則情報`}
+              aria-label={`第 ${i + 1} 則情報`} placeholder={`第 ${i + 1} 則情報`}
               className="flex-1 px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: "#EAF6FF", color: COLORS.cream, border: `1px solid ${COLORS.violet}` }}
+              style={{ background: "#EAF6FF", color: COLORS.ink, border: `1px solid ${COLORS.blue}` }}
             />
           </div>
         ))}
       </div>
-      {failed && <div className="text-xs mb-3 text-center" style={{ color: COLORS.cardEdge }}>⚠ 沒有提交成功，請確認網路連線後再按一次。</div>}
+      {failed && <div className="text-xs mb-3 text-center" style={{ color: COLORS.red }}>⚠ 沒有提交成功，請確認網路連線後再按一次。</div>}
       <button
         onClick={send}
         disabled={!canSubmit}
         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-full font-bold text-sm disabled:opacity-40"
-        style={{ background: COLORS.gold, color: "#241A14" }}
+        style={{ background: COLORS.yellow, color: "#241A14" }}
       >
         {sending ? "提交中…" : "提交"}
       </button>
@@ -976,15 +998,15 @@ function TtolLivingRoom({ ttol, myGroup }) {
   const mine = Object.entries(ttol.profiles || {}).filter(([, p]) => p.group === myGroup);
   return (
     <div>
-      <p className="text-sm mb-5" style={{ color: COLORS.creamDim }}>提交完成！輪流自我介紹，介紹完後指揮官會帶大家進入情報判讀環節。</p>
+      <p className="text-sm mb-5" style={{ color: COLORS.inkSoft }}>提交完成！輪流自我介紹，介紹完後指揮官會帶大家進入情報判讀環節。</p>
       <div className="space-y-3">
         {mine.map(([id, p]) => (
-          <div key={id} className="rounded-2xl p-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-            <div className="text-sm font-bold mb-1" style={{ color: COLORS.goldDim, fontFamily: "'Noto Serif TC', serif" }}>{p.nickname}（{p.name}）</div>
-            <div className="text-xs mb-2" style={{ color: COLORS.creamDim }}>{p.school}</div>
+          <div key={id} className="rounded-2xl p-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+            <div className="text-sm font-bold mb-1" style={{ color: COLORS.amber, fontFamily: "'Noto Serif TC', serif" }}>{p.nickname}（{p.name}）</div>
+            <div className="text-xs mb-2" style={{ color: COLORS.inkSoft }}>{p.school}</div>
             <div className="space-y-1">
               {p.statements.map((s, i) => (
-                <div key={i} className="text-xs px-2.5 py-1.5 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.cream }}>{i + 1}. {s}</div>
+                <div key={i} className="text-xs px-2.5 py-1.5 rounded-lg" style={{ background: "#EAF6FF", color: COLORS.ink }}>{i + 1}. {s}</div>
               ))}
             </div>
           </div>
@@ -1016,8 +1038,8 @@ function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
   }
 
   return (
-    <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.bg2, border: `1px solid ${COLORS.violet}` }}>
-      <p className="text-sm mb-3"><span style={{ color: COLORS.goldDim, fontWeight: 700 }}>{target.nickname}</span> <span style={{ color: COLORS.creamDim }}>的哪一則情報是假的？</span></p>
+    <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.panel, border: `1px solid ${COLORS.blue}` }}>
+      <p className="text-sm mb-3"><span style={{ color: COLORS.amber, fontWeight: 700 }}>{target.nickname}</span> <span style={{ color: COLORS.inkSoft }}>的哪一則情報是假的？</span></p>
       <div className="space-y-2 mb-3">
         {target.statements.map((s, i) => (
           <button
@@ -1025,27 +1047,27 @@ function TtolGuessCard({ target, targetId, myId, ttol, submitGuess }) {
             onClick={() => !locked && !awaiting && setPicked(i)}
             disabled={locked || awaiting}
             className="w-full text-left text-sm px-3 py-2.5 rounded-xl"
-            style={{ background: picked === i ? COLORS.gold : COLORS.bg, color: picked === i ? "#241A14" : COLORS.cream, border: `1px solid ${picked === i ? COLORS.gold : COLORS.violet}` }}
+            style={{ background: picked === i ? COLORS.yellow : COLORS.bg, color: picked === i ? "#241A14" : COLORS.ink, border: `1px solid ${picked === i ? COLORS.yellow : COLORS.blue}` }}
           >
             {i + 1}. {s}
           </button>
         ))}
       </div>
       {!locked && !awaiting && (
-        <button onClick={send} disabled={picked === null || sending} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.cardEdge, color: COLORS.cream }}>
+        <button onClick={send} disabled={picked === null || sending} className="w-full px-4 py-2 rounded-full font-bold text-sm disabled:opacity-40" style={{ background: COLORS.red, color: "#FFFFFF" }}>
           {sending ? "送出中…" : (myGuess ? `再判讀一次（第 ${myGuess.attempts + 1} 次）` : "送出第一次判讀")}
         </button>
       )}
       {awaiting && (
-        <div className="text-center text-sm" style={{ color: COLORS.creamDim }}>
+        <div className="text-center text-sm" style={{ color: COLORS.inkSoft }}>
           已送出，等待 {target.nickname} 的裝置確認…
           <div className="text-xs mt-1" style={{ opacity: 0.75 }}>（答案只存在對方手機上，請對方保持頁面開啟）</div>
         </div>
       )}
-      {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.goldDim }}>✓ 判讀成功！</div>}
-      {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.cardEdge }}>✕ 判讀失敗，兩次機會用完。</div>}
-      {myGuess && myGuess.result === "pending" && <div className="text-center text-sm mt-2" style={{ color: COLORS.creamDim }}>還沒判讀成功，再試一次！</div>}
-      {failed && <div className="text-center text-xs mt-2" style={{ color: COLORS.cardEdge }}>⚠ 這次判讀沒有送出成功（不算次數），請再按一次送出。</div>}
+      {myGuess && myGuess.result === "correct" && <div className="text-center text-sm mt-2" style={{ color: COLORS.amber }}>✓ 判讀成功！</div>}
+      {myGuess && myGuess.result === "wrong" && <div className="text-center text-sm mt-2" style={{ color: COLORS.red }}>✕ 判讀失敗，兩次機會用完。</div>}
+      {myGuess && myGuess.result === "pending" && <div className="text-center text-sm mt-2" style={{ color: COLORS.inkSoft }}>還沒判讀成功，再試一次！</div>}
+      {failed && <div className="text-center text-xs mt-2" style={{ color: COLORS.red }}>⚠ 這次判讀沒有送出成功（不算次數），請再按一次送出。</div>}
     </div>
   );
 }
@@ -1055,8 +1077,8 @@ function TtolGuessing({ ttol, myGroup, myId, submitGuess }) {
 
   return (
     <div>
-      <p className="text-sm mb-4 text-center" style={{ color: COLORS.creamDim }}>背對背獨立作答，不能問提示——判讀同小隊每一位夥伴的哪一則情報是假的。你自己的不會出現在這裡。</p>
-      {targets.length === 0 && <div className="text-center text-sm py-10" style={{ color: COLORS.creamDim }}>目前小隊內還沒有其他人可以判讀。</div>}
+      <p className="text-sm mb-4 text-center" style={{ color: COLORS.inkSoft }}>背對背獨立作答，不能問提示——判讀同小隊每一位夥伴的哪一則情報是假的。你自己的不會出現在這裡。</p>
+      {targets.length === 0 && <div className="text-center text-sm py-10" style={{ color: COLORS.inkSoft }}>目前小隊內還沒有其他人可以判讀。</div>}
       {targets.map(([id, p]) => (
         <TtolGuessCard key={id} target={p} targetId={id} myId={myId} ttol={ttol} submitGuess={submitGuess} />
       ))}
@@ -1468,7 +1490,7 @@ function App() {
 
   if (!activeRoom || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg, color: COLORS.creamDim, fontFamily: "'Noto Sans TC', sans-serif" }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg, color: COLORS.inkSoft, fontFamily: "'Noto Sans TC', sans-serif" }}>
         <style>{FONT_IMPORT}</style>
         <div className="text-sm flex items-center gap-2"><Icon name="Loader2" size={16} className="animate-spin" /> 載入中…</div>
       </div>
@@ -1493,21 +1515,21 @@ function App() {
       <div className="max-w-2xl mx-auto px-5 py-8">
         <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <Icon name="Mic2" size={22} style={{ color: COLORS.goldDim }} />
-            <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>皮克敏！使出 戲胞分裂</h1>
+            <Icon name="Mic2" size={22} style={{ color: COLORS.amber }} />
+            <h1 className="text-2xl font-black tracking-wide" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>皮克敏！使出 戲胞分裂</h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {role === "host" && activity && !editingStory && !isFirstStage(activity, state.stage) && (
               <button
                 onClick={() => pushState({ ...state, stage: prevStage(activity, state.stage) })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
-                style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}
+                style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
                 <Icon name="ArrowLeft" size={13} /> 上一關
               </button>
             )}
             {role === "host" && activity && !editingStory && (
-              <button onClick={() => setEditingStory(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}>
+              <button onClick={() => setEditingStory(true)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}>
                 <Icon name="BookOpen" size={13} /> 編輯故事
               </button>
             )}
@@ -1515,37 +1537,37 @@ function App() {
               <button
                 onClick={() => pushState({ ...state, activity: null, stage: "intro", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol }, { resetPlayerData: true })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
-                style={{ color: COLORS.creamDim, border: `1px solid ${COLORS.violet}` }}
+                style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
                 <Icon name="RotateCcw" size={13} /> 重新開始（換活動）
               </button>
             )}
             {!editingStory && role === "host" && (
-              <button onClick={enterTestPlayer} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.bg, background: COLORS.gold, fontWeight: 700 }}>
+              <button onClick={enterTestPlayer} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: "#241A14", background: COLORS.yellow, fontWeight: 700 }}>
                 <Icon name="Drama" size={13} /> 測試：進入皮克敏介面
               </button>
             )}
             {!editingStory && role === "player" && (
-              <button onClick={backToHost} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: COLORS.bg, background: COLORS.gold, fontWeight: 700 }}>
+              <button onClick={backToHost} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full" style={{ color: "#241A14", background: COLORS.yellow, fontWeight: 700 }}>
                 <Icon name="Crown" size={13} /> 返回指揮官介面
               </button>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1.5 mb-6 text-xs flex-wrap" style={{ color: role === "host" ? COLORS.goldDim : COLORS.cardEdge }}>
+        <div className="flex items-center gap-1.5 mb-6 text-xs flex-wrap" style={{ color: role === "host" ? COLORS.amber : COLORS.red }}>
           {role === "host" ? <Icon name="Crown" size={13} /> : <Icon name="Drama" size={13} />}
           目前身份：{role === "host" ? "指揮官" : "皮克敏"}
-          <span style={{ color: COLORS.creamDim }}>　·　{chapterLabel}</span>
-          {myGroup && <span style={{ color: COLORS.creamDim }}>　·　第 {myGroup} 小隊</span>}
-          <span style={{ color: syncOk ? COLORS.goldDim : COLORS.creamDim, opacity: 0.8 }}>　·　{syncOk ? "已連線同步" : "同步狀態未知"}</span>
+          <span style={{ color: COLORS.inkSoft }}>　·　{chapterLabel}</span>
+          {myGroup && <span style={{ color: COLORS.inkSoft }}>　·　第 {myGroup} 小隊</span>}
+          <span style={{ color: syncOk ? COLORS.amber : COLORS.inkSoft, opacity: 0.8 }}>　·　{syncOk ? "已連線同步" : "同步狀態未知"}</span>
           {role === "host" && dataRestored && (
-            <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>　·　⚠ 房間資料曾遺失，已從本機備份還原</span>
+            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 房間資料曾遺失，已從本機備份還原</span>
           )}
           {role === "host" && roomReal === false && (
-            <span style={{ color: COLORS.cardEdge, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
+            <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 連不上同步伺服器，房間代碼目前無法給人加入</span>
           )}
           {role === "host" && (
-            <button onClick={() => setRole("player-join")} className="ml-auto text-[11px] underline" style={{ color: COLORS.creamDim }}>
+            <button onClick={() => setRole("player-join")} className="ml-auto text-[11px] underline" style={{ color: COLORS.inkSoft }}>
               我是皮克敏（輸入房間代碼加入）
             </button>
           )}
@@ -1555,7 +1577,7 @@ function App() {
           role === "host" ? (
             <ActivitySelectScreen onSelect={(a) => pushState({ ...state, activity: a, stage: "intro" })} />
           ) : (
-            <div className="text-center py-16 text-sm" style={{ color: COLORS.creamDim }}>等待指揮官選擇今天要進行的活動…</div>
+            <div className="text-center py-16 text-sm" style={{ color: COLORS.inkSoft }}>等待指揮官選擇今天要進行的活動…</div>
           )
         ) : editingStory && role === "host" ? (
           <StoryEditor
@@ -1615,27 +1637,27 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, info) { console.error("畫面發生錯誤：", error, info); }
   render() {
     if (!this.state.error) return this.props.children;
-    const box = { background: COLORS.bg2, border: `1px solid ${COLORS.cardEdge}` };
+    const box = { background: COLORS.panel, border: `1px solid ${COLORS.red}` };
     return (
       <div className="min-h-screen flex items-center justify-center px-6" style={{ background: COLORS.bg, fontFamily: "'Noto Sans TC', sans-serif" }}>
         <div className="max-w-sm w-full rounded-2xl p-6 text-center" style={box}>
-          <div className="text-lg font-black mb-2" style={{ color: COLORS.cream, fontFamily: "'Noto Serif TC', serif" }}>畫面出了點問題</div>
-          <p className="text-xs mb-5" style={{ color: COLORS.creamDim }}>
+          <div className="text-lg font-black mb-2" style={{ color: COLORS.ink, fontFamily: "'Noto Serif TC', serif" }}>畫面出了點問題</div>
+          <p className="text-xs mb-5" style={{ color: COLORS.inkSoft }}>
             遊戲進度存在伺服器上，重新載入通常就會恢復。若反覆出現，再試下面第二個按鈕。
           </p>
           <div className="flex flex-col gap-2">
-            <button onClick={() => location.reload()} className="px-4 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.gold, color: "#241A14" }}>
+            <button onClick={() => location.reload()} className="px-4 py-2.5 rounded-full font-bold text-sm" style={{ background: COLORS.yellow, color: "#241A14" }}>
               重新載入
             </button>
             <button
               onClick={() => { try { localStorage.clear(); } catch (e) {} location.reload(); }}
               className="px-4 py-2.5 rounded-full text-sm"
-              style={{ border: `1px solid ${COLORS.violet}`, color: COLORS.creamDim }}
+              style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}
             >
               清除本機資料並重新載入
             </button>
           </div>
-          <pre className="text-[10px] mt-4 text-left overflow-x-auto" style={{ color: COLORS.creamDim, opacity: 0.7 }}>{String(this.state.error && this.state.error.message)}</pre>
+          <pre className="text-[10px] mt-4 text-left overflow-x-auto" style={{ color: COLORS.inkSoft, opacity: 0.7 }}>{String(this.state.error && this.state.error.message)}</pre>
         </div>
       </div>
     );

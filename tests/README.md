@@ -1,26 +1,24 @@
-# 多人同步回歸測試
+# 回歸測試
 
-用 Playwright 實際開多個瀏覽器分頁跑 `index.html`：每個參與者一個獨立的 browser context
-（各自的 localStorage，等同不同裝置），CDN 換成本地檔案，`kvdb.io` 換成共用的記憶體版並
-模擬網路延遲。這樣才測得出「大家同時操作」時的行為——沒有延遲的話競態窗口小到測不出來。
+用 Playwright 實際開多個瀏覽器分頁跑遊戲：每個參與者一個獨立的 browser context
+（各自的 localStorage，等同不同裝置），CDN 換成本地檔案，`kvdb.io` 換成共用的記憶體版
+並模擬網路延遲。這樣才測得出「大家同時操作」時的行為——沒有延遲的話競態窗口小到
+測不出來，多人覆蓋的問題會測不到。
 
 ## 執行
 
 ```bash
-npm install react@18.2.0 react-dom@18.2.0 @babel/standalone@7.23.5 playwright
+npm install
 node tests/test-ttol.js
 ```
 
-`@babel/standalone` 必須釘在 7.23.5，與 `index.html` 載入的版本一致：Babel 8 的 JSX
-預設改成 automatic runtime，會產生 `import` 而在瀏覽器直接壞掉。
+一次只跑一個檔案。連續啟動多個 Chromium 會在資源吃緊時出現點擊逾時。
 
 環境變數：
 
-- `GAME=/path/to/index.html` — 指定要測的檔案（可用來對照修改前後的版本）
+- `GAME=/path/to/index.html` — 指定要測的檔案（可對照修改前後的版本，或改測 `dist/`）
 - `LATENCY=120` — 模擬的單次往返延遲毫秒數，預設 120
 - `TRACE=1` — 印出每一次寫入伺服器的狀態（關卡、情報份數）
-
-一次只跑一個檔案。連續啟動多個 Chromium 會在資源吃緊時出現點擊逾時。
 
 ## 各測試涵蓋的情境
 
@@ -30,6 +28,18 @@ node tests/test-ttol.js
 | `test-draw.js` | 四人同時抽情境牌不重複、不遺漏；重整頁面後仍認得自己那張 |
 | `test-stress.js` | 六人同時提交情報、同時送出判讀，全部落地 |
 | `test-timing.js` | 量測六人同時提交各自要多久才真的寫入伺服器 |
+| `test-order.js` | 指揮官快速連續切換關卡時，抵達伺服器的順序等於操作順序 |
 | `test-offline.js` | 完全連不上 kvdb 時仍可用單機模式，且不對死掉的伺服器空轉 |
 | `test-reset.js` | 指揮官重置後，玩家的自我修復不會把舊資料寫回去 |
 | `test-misc.js` | 故事編輯器、倒數計時器、集合人數的跨裝置同步 |
+| `test-stage-a.js` | 房間代碼常駐、回上一關、編輯去抖動、空白情境不入抽牌池 |
+| `test-clock.js` | 兩台裝置系統時鐘差 5 分鐘時，倒數仍然一致 |
+| `test-perf.js` | 輪詢請求量、切到背景時暫停、變動後恢復靈敏的延遲 |
+| `test-resilience.js` | CDN 掛掉的提示、錯誤邊界、預先編譯版的載入速度 |
+| `test-secrecy.js` | 假情報答案不上傳，判定由本人的裝置完成 |
+| `test-tamper.js` | 房間資料被清空時，指揮官自動從本機備份還原 |
+| `test-a11y.js` | 在實際渲染的畫面上量測文字對比度與互動元素的可讀名稱 |
+
+`test-a11y.js` 預設測 `dist/index.html`：Tailwind 的 preflight 會重設按鈕的瀏覽器預設
+底色，少了它量到的背景色是錯的，必須用含有真正 Tailwind 的建置版才等於使用者看到的畫面。
+執行前請先 `npm run build`。
