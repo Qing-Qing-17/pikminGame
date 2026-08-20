@@ -36,8 +36,8 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await host.click("text=上一關");
   await host.click("text=自動隨機");
-  await host.waitForSelector("text=抽一個新的數字", { timeout: 15000 });
-  await host.click("text=抽一個新的數字");
+  await host.waitForSelector("text=現在就換一個", { timeout: 15000 });
+  await host.click("text=現在就換一個");
   const t0 = Date.now();
   await p.waitForFunction(
     (expected) => document.body.innerText.includes(expected),
