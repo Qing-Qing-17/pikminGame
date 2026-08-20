@@ -24,6 +24,11 @@ async function startServer(gameFile, dbUrl) {
   // 注意要檢查「有沒有比對到」而不是「內容有沒有變」——測試空網址時前後會一模一樣
   if (!pattern.test(html)) throw new Error("找不到 FIREBASE_DB_URL 常數，無法注入測試用的資料庫網址");
   html = html.replace(pattern, () => `const FIREBASE_DB_URL = ${JSON.stringify(dbUrl)};`);
+  // 自動換人數的間隔是 1～2 分鐘，測試等不了，換成很短的值
+  if (process.env.FAST_AUTO) {
+    html = html.replace(/const AUTO_TARGET_RANGE_MS = \[[^\]]*\];/,
+      () => `const AUTO_TARGET_RANGE_MS = [${process.env.FAST_AUTO}, ${Number(process.env.FAST_AUTO) * 2}];`);
+  }
   const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);
@@ -58,11 +63,15 @@ async function makeWorld(gameFile, opts = {}) {
     contexts.push(ctx);
 
     // 資料庫請求加延遲；SSE 是長連線，攔截會破壞串流，所以直接放行
-    await ctx.route("**://127.0.0.1:9000/**", async (route, req) => {
+    await ctx.route(`**://127.0.0.1:${emu.port}/**`, async (route, req) => {
       const isStream = req.resourceType() === "eventsource" ||
         /text\/event-stream/.test(req.headers()["accept"] || "");
       if (isStream) { stats.streams++; return route.continue(); }
       stats.requests++;
+      if (process.env.TRACE && req.method() !== "GET") {
+        const body = (req.postData() || "").slice(0, 160);
+        console.log(`    ${req.method()} ${req.url().replace(new RegExp(`^.*?${emu.port}`), "").split("?")[0]} ${body}`);
+      }
       if (req.method() !== "GET") {
         // 依路徑分類寫入次數，測試才能斷言「編輯任務卡只送出一次」這類行為
         const m = req.url().match(/\/rooms\/[^/]+\/([^/.?]+)/);
@@ -149,6 +158,12 @@ async function makeWorld(gameFile, opts = {}) {
     },
   };
 
+  // 測試中途失敗或被中斷時也要收乾淨，否則殘留的模擬器與瀏覽器會污染下一輪
+  const reap = () => { try { browser.close(); } catch (e) {} try { server.close(); } catch (e) {} emu.stop(); };
+  process.once("exit", reap);
+  process.once("SIGINT", () => { reap(); process.exit(130); });
+  process.once("SIGTERM", () => { reap(); process.exit(143); });
+
   async function close() {
     for (const c of contexts) await c.close();
     await browser.close();
@@ -213,4 +228,14 @@ async function roomCodeOnScreen(page) {
 
 const ok = (cond, msg) => console.log(`  ${cond ? "✓" : "✗ 失敗:"} ${msg}`);
 
-module.exports = { makeWorld, joinAs, fillProfile, roomCodeOnScreen, hostAdvance, finishSetup, ok };
+/* 倒數計時器現在是標題列的小工具，要先打開才看得到 */
+async function openTimer(page) {
+  if (await page.isVisible('[data-testid="timer-mini"]')) {
+    await page.click('[data-testid="timer-mini"]');
+  } else {
+    await page.click('button:has-text("倒數計時器")');
+  }
+  await page.waitForSelector('[data-testid="timer-tool"]', { timeout: 15000 });
+}
+
+module.exports = { makeWorld, joinAs, fillProfile, roomCodeOnScreen, hostAdvance, finishSetup, openTimer, ok };
