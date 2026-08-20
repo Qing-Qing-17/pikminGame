@@ -3,11 +3,25 @@
    因為 CLI 啟動時會去抓遠端設定，在沒有對外網路的環境會失敗。 */
 const fs = require("fs");
 const path = require("path");
+const net = require("net");
 const { spawn, execFileSync } = require("child_process");
 
 const NS = process.env.FB_NS || "demo-pikmin";
-const PORT = Number(process.env.FB_PORT || 9000);
 const HOST = "127.0.0.1";
+
+/* 每次跑測試都用一個空著的埠。用固定埠時，上一輪殘留的模擬器會繼續佔著它，
+   新的 java 綁不上但 waitReady 照樣成功，測試就默默接到舊的資料庫上——
+   結果是一堆看起來像產品壞掉、其實是殘留行程造成的假失敗。 */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.on("error", reject);
+    srv.listen(0, HOST, () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 function findJar() {
   const roots = [path.join(process.env.HOME || "/root", ".cache/firebase/emulators")];
@@ -32,6 +46,7 @@ async function waitReady(url, timeoutMs = 40000) {
 }
 
 async function start() {
+  const PORT = Number(process.env.FB_PORT || (await freePort()));
   const jar = findJar();
   if (!jar) {
     throw new Error("找不到 Firebase 模擬器 jar。請先執行：npx firebase-tools setup:emulators:database");
@@ -48,6 +63,7 @@ async function start() {
     // 用戶端會拿到的資料庫網址；?ns= 由 dbUrl 內建，程式碼不必知道模擬器的存在
     url: `${base}/?ns=${NS}`,
     base,
+    port: PORT,
     ns: NS,
     async reset() {
       await fetch(`${base}/.json?ns=${NS}`, { method: "DELETE" });

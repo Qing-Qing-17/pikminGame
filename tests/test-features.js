@@ -18,13 +18,13 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.waitForTimeout(150);
   }
   await hostAdvance(host, "開始第一關：皮克敏迫降");
-  await host.waitForSelector("text=遊戲倒數", { timeout: 15000 });
+  await host.waitForSelector('[data-testid="cell-target"]', { timeout: 15000 });
 
   // 集合人數：兩種模式
   ok(await host.isVisible("text=手動指定"), "集合人數有手動指定模式");
   await host.click("text=自動隨機");
-  await host.waitForSelector("text=抽一個新的數字", { timeout: 10000 });
-  ok(true, "切換到自動隨機後出現抽數字按鈕");
+  await host.waitForSelector("text=現在就換一個", { timeout: 10000 });
+  ok(true, "切換到自動隨機後出現換數字按鈕");
 
   // 到故事繼續 → 先設定小隊數才給代碼
   await host.click("text=前往下一關");
