@@ -58,8 +58,8 @@ async function serve(file) {
     await world.db.write(`rooms/${code}/session/cardRevealed`, true);
     await host.waitForTimeout(1500);
     const p = await world.device("p0");
-    await p.click("text=我是皮克敏（輸入房間代碼加入）");
-    await p.fill('input[placeholder="房間代碼"]', code);
+    await p.goto(p.url().split("?")[0] + `?join=${code}`);
+    await p.waitForSelector('input[placeholder="房間代碼"]', { timeout: 20000 });
     await p.click('button:has-text("加入遊戲")');
     // 要先選小隊才會進到讀取任務卡的畫面
     await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
