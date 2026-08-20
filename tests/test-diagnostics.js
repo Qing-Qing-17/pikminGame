@@ -1,6 +1,6 @@
 /* 同步失敗時，畫面要說出「為什麼」而不只是「連不上」。
    最常見的兩種：Firebase 規則拒絕存取，以及網路完全不通。 */
-const { makeWorld, ok } = require("./harness");
+const { makeWorld, ok, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -11,9 +11,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     const host = await world.device("host", { denyDb: true });
     await host.waitForSelector("text=選擇今天要進行的活動", { timeout: 20000 });
     await host.click("text=星攻略");
-    await host.click("text=開始第一關：皮克敏迫降");
+    await hostAdvance(host, "開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
-    await host.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+    await finishSetup(host);
     const txt = await host.textContent("#root");
     ok(/權限不足/.test(txt), "指出是權限問題，不是網路問題");
     ok(/規則/.test(txt), "告訴使用者要去改哪裡（Firebase 的規則）");
@@ -33,9 +33,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     const world = await makeWorld(GAME);
     const host = await world.device("host", { blockDb: true });
     await host.click("text=星攻略");
-    await host.click("text=開始第一關：皮克敏迫降");
+    await hostAdvance(host, "開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
-    await host.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+    await finishSetup(host);
     const txt = await host.textContent("#root");
     ok(/網路不通|網址打錯/.test(txt), `斷線時說明可能是網路或網址問題`);
     ok(/測試：進入皮克敏介面/.test(txt), "同時告知還能怎麼繼續");

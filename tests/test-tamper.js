@@ -1,6 +1,6 @@
 /* B6：房間沒有存取控制，任何知道代碼的人都能清空它。
    指揮官應該偵測到並從本機備份還原，而不是整場重來。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -8,11 +8,11 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
-  await host.click("text=開始：情報交換");
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
+  await hostAdvance(host, "開始：情報交換");
   await host.waitForSelector("text=已提交名單", { timeout: 15000 });
   await host.waitForTimeout(3000);
 

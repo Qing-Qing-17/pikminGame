@@ -1,5 +1,5 @@
 /* C 階段：量測輪詢請求量、背景暫停、以及預先編譯版的載入速度。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -7,9 +7,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=星攻略");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
+  await finishSetup(host);
   const code = await world.db.onlyRoom();
   const p = await world.device("p0");
   await joinAs(p, code);
@@ -35,12 +35,13 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await p.evaluate(() => Object.defineProperty(document, "hidden", { value: false, configurable: true }));
   await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await host.click("text=上一關");
-  await host.waitForSelector("text=隨機變換人數", { timeout: 15000 });
-  await host.click("text=隨機變換人數");
+  await host.click("text=自動隨機");
+  await host.waitForSelector("text=抽一個新的數字", { timeout: 15000 });
+  await host.click("text=抽一個新的數字");
   const t0 = Date.now();
   await p.waitForFunction(
     (expected) => document.body.innerText.includes(expected),
-    await host.textContent(".text-6xl"),
+    await host.textContent('[data-testid="cell-target"]'),
     { timeout: 10000 }
   );
   ok(Date.now() - t0 < 4000, `指揮官變更後 ${((Date.now() - t0) / 1000).toFixed(1)}s 內同步到皮克敏`);

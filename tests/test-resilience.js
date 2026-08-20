@@ -3,7 +3,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { chromium } = require("playwright");
-const { makeWorld, ok } = require("./harness");
+const { makeWorld, ok, hostAdvance, finishSetup } = require("./harness");
 
 const ROOT = path.join(__dirname, "..");
 const NM = path.join(ROOT, "node_modules");
@@ -43,15 +43,15 @@ async function serve(file) {
     const world = await makeWorld(path.join(ROOT, "index.html"));
     const host = await world.device("host");
     await host.click("text=星攻略");
-    await host.click("text=開始第一關：皮克敏迫降");
+    await hostAdvance(host, "開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
-    await host.waitForSelector("text=皮克敏加入");
+    await finishSetup(host);
     const code = await world.db.onlyRoom();
 
     // 塞一張缺少 scenarios 欄位的任務卡，並直接指定它為當前題目——
     // 畫面讀到它時會在 scenarios.map 拋錯，正好用來驗證錯誤邊界。
     await world.db.write(`rooms/${code}/cards`, [{ id: "broken", line: "壞掉的卡" }]);
-    await host.click("text=開始：偽裝洞穴");
+    await hostAdvance(host, "開始：偽裝洞穴");
     await host.waitForSelector("text=抽任務卡", { timeout: 15000 });
     await host.waitForTimeout(2000); // 等指揮官那次 session 寫入落地，否則會把下面的 cardId 蓋掉
     await world.db.write(`rooms/${code}/session/cardId`, "broken");

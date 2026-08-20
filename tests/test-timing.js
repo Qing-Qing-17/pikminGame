@@ -1,5 +1,5 @@
 /* 量測：6 人同時按下「提交」後，各自過多久才真的寫進伺服器（或宣告失敗）。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 const N = 6;
@@ -8,10 +8,10 @@ const N = 6;
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
 
   const players = [];
   for (let i = 0; i < N; i++) {
@@ -19,11 +19,7 @@ const N = 6;
     await joinAs(p, code);
     players.push(p);
   }
-  await host.click("text=開始：情報交換").catch(async (e) => {
-    const body = (await host.textContent("body")).replace(/\s+/g, " ");
-    console.log("指揮官所在關卡:", (body.match(/目前身份：指揮官 · ([^·]+)/) || [])[1]);
-    throw e;
-  });
+  await hostAdvance(host, "開始：情報交換");
   for (const p of players) {
     await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
     await p.click(".grid.grid-cols-3 button:has-text('1')");

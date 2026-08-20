@@ -1,5 +1,5 @@
 /* B5：假情報的答案不可以出現在共用狀態裡，但判定仍要正確。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -17,16 +17,16 @@ async function fill(page, i, lieIdx) {
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
 
   const a = await world.device("a");
   const b = await world.device("b");
   await joinAs(a, code);
   await joinAs(b, code);
-  await host.click("text=開始：情報交換");
+  await hostAdvance(host, "開始：情報交換");
   for (const p of [a, b]) {
     await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
     await p.click(".grid.grid-cols-3 button:has-text('1')");

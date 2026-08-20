@@ -1,6 +1,6 @@
 /* 情境 A：指揮官按下「開始情報判讀」時，會不會把玩家剛填好的情報清空？
    同時驗證指揮官的「已提交名單」看不看得到玩家。 */
-const { makeWorld, joinAs, fillProfile, ok } = require("./harness");
+const { makeWorld, joinAs, fillProfile, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -10,10 +10,10 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
   // 指揮官：培訓 → 序章 → 皮克敏迫降 → 故事繼續一（此處會顯示房間代碼）
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
   console.log("房間代碼:", code);
 
   // 兩位皮克敏各自用獨立裝置加入，選第 1 小隊、填寫情報
@@ -22,7 +22,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await joinAs(p1, code);
   await joinAs(p2, code);
 
-  await host.click("text=開始：情報交換");
+  await hostAdvance(host, "開始：情報交換");
   for (const p of [p1, p2]) {
     await p.waitForSelector("text=選擇你的小隊", { timeout: 15000 });
     await p.click(".grid.grid-cols-3 button:has-text('1')");

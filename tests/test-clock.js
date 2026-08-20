@@ -1,6 +1,6 @@
 /* A4：兩台裝置的系統時鐘差很多時，倒數是否仍然一致。
    SERVER_SKEW 讓假伺服器回報一個與本機不同的時間，程式應該以它為共同基準。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, hostAdvance } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -13,7 +13,7 @@ async function countdown(page) {
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=星攻略");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.waitForSelector("text=遊戲倒數");
 
   // 讓皮克敏這台裝置的時鐘快 5 分鐘

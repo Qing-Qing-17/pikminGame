@@ -1,5 +1,5 @@
 /* 情境 E：指揮官按「重新開始（換活動）」後，玩家的自我修復機制不可以把舊資料寫回去。 */
-const { makeWorld, joinAs, ok } = require("./harness");
+const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -7,14 +7,14 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=培訓");
-  await host.click("text=開始第一關：皮克敏迫降");
+  await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=皮克敏加入");
-  const code = (await host.textContent(".text-4xl.font-black.tracking-widest")).trim();
+  await finishSetup(host);
+  const code = await roomCodeOnScreen(host);
 
   const p = await world.device("p0");
   await joinAs(p, code);
-  await host.click("text=開始：情報交換");
+  await hostAdvance(host, "開始：情報交換");
   await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
   await p.click(".grid.grid-cols-3 button:has-text('1')");
   await p.fill('input[placeholder="所屬基地"]', "基地");

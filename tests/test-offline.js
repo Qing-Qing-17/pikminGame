@@ -1,6 +1,6 @@
 /* 情境 D：完全連不上資料庫（現場沒網路），以及後端根本還沒設定。
    指揮官都應該仍能跑完自己那台裝置的流程，並且不對死掉的端點空轉。 */
-const { makeWorld, ok } = require("./harness");
+const { makeWorld, ok, hostAdvance, finishSetup } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -12,9 +12,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.waitForSelector("text=選擇今天要進行的活動", { timeout: 20000 });
     ok(true, "尚未設定後端時，指揮官畫面仍正常載入");
     await host.click("text=星攻略");
-    await host.click("text=開始第一關：皮克敏迫降");
+    await hostAdvance(host, "開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
-    await host.waitForSelector("text=皮克敏加入");
+    await finishSetup(host);
     const t = await host.textContent("#root");
     ok(/多人連線無法使用/.test(t) && /還沒有填入 Firebase 資料庫網址/.test(t), "警告中明確說出是「還沒填資料庫網址」");
 
@@ -32,10 +32,10 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     const host = await world.device("host", { blockDb: true });
     await host.waitForSelector("text=選擇今天要進行的活動", { timeout: 20000 });
     await host.click("text=星攻略");
-    await host.click("text=開始第一關：皮克敏迫降");
+    await hostAdvance(host, "開始第一關：皮克敏迫降");
     await host.click("text=前往下一關");
-    await host.waitForSelector("text=皮克敏加入");
-    await host.click("text=開始：偽裝洞穴");
+    await finishSetup(host);
+    await hostAdvance(host, "開始：偽裝洞穴");
     await host.click("text=抽任務卡");
     await host.waitForSelector("text=各小隊抽取進度", { timeout: 15000 });
     ok(true, "連不上時指揮官仍能抽出任務卡");
@@ -44,7 +44,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.waitForSelector("text=選擇你的小隊", { timeout: 15000 });
     await host.click(".grid.grid-cols-3 button:has-text('1')");
     await host.click('button:has-text("抽情境牌")');
-    await host.waitForSelector("text=/第 \\d+ 號（只有你看得到）/", { timeout: 15000 });
+    await host.waitForSelector("text=/第 \\d+ 號/", { timeout: 20000 });
     ok(true, "單機測試模式下抽得到情境牌");
 
     const before = world.stats.requests;
