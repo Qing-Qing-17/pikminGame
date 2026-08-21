@@ -1,5 +1,5 @@
-/* 這次新增的遊戲機制：純數字代碼、先設定小隊數、加入連結、
-   猜題者、表演方式、表演者只看自己那題、洗牌動畫、定格。 */
+/* 這次新增的遊戲機制：設定與故事分頁、純數字代碼、加入連結與 QR code、
+   玩家在故事期間顯示待續、猜題者、表演方式、表演者只看自己那題。 */
 const { makeWorld, joinAs, ok, roomCodeOnScreen, hostAdvance } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
@@ -8,17 +8,44 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const world = await makeWorld(GAME);
   const host = await world.device("host");
 
+  // 選完活動先落在「設定」關，故事還沒開始
   await host.click("text=星攻略");
-  await host.click("text=下一頁");           // 故事分頁
-  await host.click("text=上一頁");
-  // 序章有多頁，先一路翻到底
-  for (let i = 0; i < 25; i++) {
-    if (await host.isVisible("text=開始第一關：皮克敏迫降")) break;
-    await host.click("text=下一頁");
-    await host.waitForTimeout(150);
+  await host.waitForSelector("text=設定小隊數量", { timeout: 15000 });
+  ok((await host.getAttribute('[data-testid="app"]', "data-stage")) === "setup", "選完活動先進設定頁，不是直接進故事");
+  ok(!/\?join=/.test(await host.textContent("#root")), "設定小隊數之前不顯示房間代碼與連結");
+  ok(!(await host.isVisible("text=下一頁")), "設定頁上沒有故事的翻頁按鈕");
+
+  await host.click('button:has-text("就是")');
+  await host.waitForSelector('[data-testid="room-ready"]', { timeout: 15000 });
+  const code = await roomCodeOnScreen(host);
+  ok(/^\d{6}$/.test(code), `房間代碼是六位純數字：${code}`);
+  ok(/\?join=/.test(await host.textContent("#root")), "畫面上提供了可直接加入的連結");
+  ok(await host.isVisible('[data-testid="qr"]'), "設定頁上有 QR code");
+  ok((await host.getAttribute('[data-testid="app"]', "data-stage")) === "setup", "產生代碼後仍停在設定頁，等指揮官按進入故事");
+
+  // 兩位皮克敏先加入，晚點才開始說故事
+  const players = [];
+  for (let i = 0; i < 2; i++) {
+    const p = await world.device("p" + i);
+    await joinAs(p, code);
+    players.push(p);
   }
+
+  await host.click("text=進入故事");
+  await host.waitForSelector("text=下一頁", { timeout: 15000 });
+  ok((await host.getAttribute('[data-testid="app"]', "data-stage")) === "intro", "按下進入故事才開始序章");
+  await players[0].waitForSelector('[data-testid="player-waiting"]', { timeout: 20000 });
+  ok(/待續/.test(await players[0].textContent("#root")), "故事期間皮克敏的畫面顯示待續…");
+  ok(!/通訊器響起/.test(await players[0].textContent("#root")), "皮克敏看不到故事內文，抬頭看投影就好");
+
+  await host.click("text=下一頁");
+  await host.click("text=上一頁");
   await hostAdvance(host, "開始第一關：皮克敏迫降");
   await host.waitForSelector('[data-testid="cell-target"]', { timeout: 15000 });
+
+  // 房間代碼與 QR code 固定留在右上角
+  ok(await host.isVisible('[data-testid="room-badge"]'), "進到關卡後，右上角仍看得到房間代碼");
+  ok((await host.textContent('[data-testid="room-badge"]')).includes(code), "右上角顯示的就是同一組代碼");
 
   // 集合人數：兩種模式
   ok(await host.isVisible("text=手動指定"), "集合人數有手動指定模式");
@@ -26,32 +53,9 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await host.waitForSelector("text=現在就換一個", { timeout: 10000 });
   ok(true, "切換到自動隨機後出現換數字按鈕");
 
-  // 到故事繼續 → 先設定小隊數才給代碼
   await host.click("text=前往下一關");
-  await host.waitForSelector("text=第一步：設定小隊數量", { timeout: 15000 });
-  // 設定畫面上的小隊數也是大字，所以改用「有沒有產生加入連結」判斷
-  ok(!/\?join=/.test(await host.textContent("#root")), "設定小隊數之前不顯示房間代碼與連結");
-  await host.click('button:has-text("就是")');
-  await host.waitForSelector("text=皮克敏加入", { timeout: 15000 });
-  const code = await roomCodeOnScreen(host);
-  ok(/^\d{6}$/.test(code), `房間代碼是六位純數字：${code}`);
-
-  // 加入連結
-  const bodyTxt = await host.textContent("#root");
-  ok(/\?join=/.test(bodyTxt), "畫面上提供了可直接加入的連結");
-
-  // 兩位皮克敏加入同一小隊
-  const players = [];
-  for (let i = 0; i < 2; i++) {
-    const p = await world.device("p" + i);
-    await joinAs(p, code);
-    players.push(p);
-  }
-  for (let i = 0; i < 25; i++) {
-    if (await host.isVisible("text=開始：偽裝洞穴")) break;
-    await host.click("text=下一頁"); await host.waitForTimeout(150);
-  }
   await hostAdvance(host, "開始：偽裝洞穴");
+  ok(await host.isVisible('[data-testid="room-badge"]'), "抽題目時右上角也看得到房間代碼與 QR code");
   for (const p of players) {
     await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
     await p.click(".grid.grid-cols-3 button:has-text('1')");

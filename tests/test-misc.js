@@ -1,5 +1,5 @@
 /* 情境 F：故事編輯器、計時器、以及玩家端同步顯示。 */
-const { makeWorld, joinAs, ok, hostAdvance, openTimer } = require("./harness");
+const { makeWorld, joinAs, ok, hostAdvance, finishSetup, openTimer } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
@@ -7,6 +7,10 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   const world = await makeWorld(GAME);
   const host = await world.device("host");
   await host.click("text=星攻略");
+  // 設定完小隊數、按下進入故事，才會看得到序章
+  await finishSetup(host);
+  await host.click("text=進入故事");
+  await host.waitForSelector("text=下一頁", { timeout: 20000 });
 
   // 故事編輯器
   await host.click("text=編輯故事");

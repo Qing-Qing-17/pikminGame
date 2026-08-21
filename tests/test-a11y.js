@@ -55,16 +55,24 @@ async function audit(page, where) {
   await audit(host, "活動選擇");
 
   await host.click("text=培訓");
+  await host.waitForSelector("text=設定小隊數量", { timeout: 20000 });
+  await audit(host, "設定小隊數量");
+  await finishSetup(host);
+  await audit(host, "房間代碼與 QR code");
+
+  await host.click("text=進入故事");
+  await host.waitForSelector("text=下一頁", { timeout: 20000 });
   await audit(host, "序章");
   await hostAdvance(host, "開始第一關：皮克敏迫降");
   await audit(host, "皮克敏迫降（指揮官）");
   await host.click("text=前往下一關");
-  await finishSetup(host);
-  await audit(host, "故事繼續＋房間代碼");
+  await audit(host, "故事繼續");
 
   const code = await roomCodeOnScreen(host);
   const p = await world.device("p0");
   await joinAs(p, code);
+  await p.waitForSelector('[data-testid="player-waiting"]', { timeout: 20000 });
+  await audit(p, "故事期間的皮克敏畫面（待續…）");
   await hostAdvance(host, "開始：情報交換");
   await p.waitForSelector("text=選擇你的小隊", { timeout: 20000 });
   await audit(p, "選擇小隊（皮克敏）");
@@ -73,7 +81,7 @@ async function audit(page, where) {
   await audit(p, "填寫情報表單");
 
   await host.click("text=上一關");
-  await host.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+  await host.waitForSelector('[data-testid="app"][data-stage="transition1"]', { timeout: 20000 });
   await hostAdvance(host, "開始：情報交換");
   await host.waitForSelector("text=已提交名單");
   await audit(host, "情報交換（指揮官）");

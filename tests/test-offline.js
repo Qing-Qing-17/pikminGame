@@ -12,14 +12,13 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.waitForSelector("text=選擇今天要進行的活動", { timeout: 20000 });
     ok(true, "尚未設定後端時，指揮官畫面仍正常載入");
     await host.click("text=星攻略");
-    await hostAdvance(host, "開始第一關：皮克敏迫降");
-    await host.click("text=前往下一關");
     await finishSetup(host);
     const t = await host.textContent("#root");
     ok(/多人連線無法使用/.test(t) && /還沒有填入 Firebase 資料庫網址/.test(t), "警告中明確說出是「還沒填資料庫網址」");
 
-    await host.click("text=我是皮克敏（輸入房間代碼加入）");
-    await host.fill('input[placeholder="房間代碼"]', "ABC123");
+    await host.goto(host.url().split("?")[0] + "?join");
+    await host.waitForSelector('input[placeholder="房間代碼"]', { timeout: 20000 });
+    await host.fill('input[placeholder="房間代碼"]', "123456");
     await host.click('button:has-text("加入遊戲")');
     await host.waitForSelector("text=還沒有設定同步伺服器", { timeout: 15000 });
     ok(true, "玩家會看到「尚未設定同步伺服器」而不是誤以為自己網路有問題");
@@ -39,13 +38,6 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
     await host.click("text=抽任務卡");
     await host.waitForSelector("text=各小隊抽取進度", { timeout: 15000 });
     ok(true, "連不上時指揮官仍能抽出任務卡");
-
-    await host.click("text=測試：進入皮克敏介面");
-    await host.waitForSelector("text=選擇你的小隊", { timeout: 15000 });
-    await host.click(".grid.grid-cols-3 button:has-text('1')");
-    await host.click('button:has-text("抽情境牌")');
-    await host.waitForSelector("text=/第 \\d+ 號/", { timeout: 20000 });
-    ok(true, "單機測試模式下抽得到情境牌");
 
     const before = world.stats.requests;
     await host.waitForTimeout(6000);

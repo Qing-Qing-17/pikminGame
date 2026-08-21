@@ -174,11 +174,14 @@ async function makeWorld(gameFile, opts = {}) {
   return { device, db, stats, close, dbUrl };
 }
 
+/* 指揮官與皮克敏的介面不再互通，玩家一律走 ?join 連結（就是 QR code 指到的網址）。 */
 async function joinAs(page, code) {
-  await page.click("text=我是皮克敏（輸入房間代碼加入）");
+  const base = page.url().split("?")[0];
+  await page.goto(`${base}?join=${encodeURIComponent(code)}`);
+  await page.waitForSelector('input[placeholder="房間代碼"]', { timeout: 20000 });
   await page.fill('input[placeholder="房間代碼"]', code);
   await page.click('button:has-text("加入遊戲")');
-  await page.waitForSelector("text=返回指揮官介面", { timeout: 20000 }).catch(async () => {
+  await page.waitForSelector('[data-testid="app"][data-role="player"]', { timeout: 20000 }).catch(async () => {
     const err = await page.textContent("body");
     throw new Error("加入失敗，畫面訊息: " + err.replace(/\s+/g, " ").slice(0, 300));
   });
@@ -194,8 +197,14 @@ async function fillProfile(page, nickname, lieIdx = 0) {
 }
 
 /* 故事現在是一頁一句，所以「前往下一關」之前要先把故事翻完。
-   這個輔助函式會一直按下一頁，直到指定的關卡按鈕出現為止。 */
-async function hostAdvance(page, label, max = 30) {
+   這個輔助函式會一直按下一頁，直到指定的關卡按鈕出現為止；
+   選完活動會先落在「設定」關，所以順手把小隊數設完、按下進入故事。 */
+async function hostAdvance(page, label, max = 40) {
+  if (await page.isVisible("text=設定小隊數量")) await finishSetup(page);
+  if (await page.isVisible("text=進入故事")) {
+    await page.click("text=進入故事");
+    await page.waitForTimeout(200);
+  }
   for (let i = 0; i < max; i++) {
     if (await page.isVisible(`text=${label}`)) {
       await page.click(`text=${label}`);
@@ -208,11 +217,13 @@ async function hostAdvance(page, label, max = 30) {
   await page.click(`text=${label}`);
 }
 
-/* 房間代碼要先設定完小隊數才會出現 */
+/* 「設定」關：定小隊數 → 產生房間代碼與 QR code。已經設定過就直接返回。 */
 async function finishSetup(page) {
-  await page.waitForSelector("text=第一步：設定小隊數量", { timeout: 20000 });
+  const done = await page.getAttribute('[data-testid="app"]', "data-setup").catch(() => null);
+  if (done === "1") return;
+  await page.waitForSelector("text=設定小隊數量", { timeout: 20000 });
   await page.click('button:has-text("就是")');
-  await page.waitForSelector("text=皮克敏加入", { timeout: 20000 });
+  await page.waitForSelector('[data-testid="room-ready"]', { timeout: 20000 });
 }
 
 /* 從畫面上讀出房間代碼。設定完小隊數之後，代碼是唯一以大字呈現的六位數字。 */

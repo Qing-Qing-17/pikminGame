@@ -52,7 +52,7 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
   await p.waitForSelector('input[placeholder="房間代碼"]', { timeout: 20000 });
   ok((await p.inputValue('input[placeholder="房間代碼"]')) === code, "掃描後自動帶入代碼");
   await p.click('button:has-text("加入遊戲")');
-  const joined = await p.waitForSelector("text=返回指揮官介面", { timeout: 20000 }).then(() => true).catch(() => false);
+  const joined = await p.waitForSelector('[data-testid="app"][data-role="player"]', { timeout: 20000 }).then(() => true).catch(() => false);
   ok(joined, "掃 QR code 可以直接進入房間");
 
   await world.close();

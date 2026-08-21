@@ -18,7 +18,8 @@ const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 
   const stage = (await world.db.room(code)).stage;
   ok(stage === "transition1", `伺服器上的關卡是最後操作的那個（實際: ${stage}）`);
-  ok(await host.isVisible("text=皮克敏加入"), "指揮官畫面停在正確的關卡");
+  const shown = await host.getAttribute('[data-testid="app"]', "data-stage");
+  ok(shown === "transition1", `指揮官畫面停在正確的關卡（實際: ${shown}）`);
 
   // 前進、後退、再前進連著按，最後應該停在 ttol
   await hostAdvance(host, "開始：情報交換");

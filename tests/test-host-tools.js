@@ -1,6 +1,6 @@
-/* 主持人端的工具與流程：重整不會換房間、音樂已移除、定格、
+/* 主持人端的工具與流程：重整不會換房間、音樂與定格都已移除、
    倒數計時器小工具、自動隨機會自己換人數。 */
-const { makeWorld, hostAdvance, finishSetup, roomCodeOnScreen, joinAs, ok } = require("./harness");
+const { makeWorld, hostAdvance, roomCodeOnScreen, joinAs, ok } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
 // 正式是 1～2 分鐘換一次，測試等不了，把區間縮成 3～6 秒（harness 會改寫常數）
@@ -20,20 +20,12 @@ const attrs = (page) => page.evaluate(() => {
   ok(!/背景音樂|選擇音樂檔案/.test(cell), "音樂功能已移除（改用外部播放）");
   ok(!/遊戲倒數/.test(cell), "倒數計時器不再佔用集合人數的畫面");
 
-  // 定格
   const p = await world.device("p0");
-  await host.click("text=前往下一關");
-  await finishSetup(host);
   const code = await roomCodeOnScreen(host);
   await joinAs(p, code);
-  await host.click("text=上一關");
-  await host.waitForSelector("text=定格（全場停住）", { timeout: 20000 });
-  await host.click("text=定格（全場停住）");
-  await p.waitForSelector("text=定格！", { timeout: 20000 });
-  ok(true, "按下定格後，皮克敏的畫面立刻顯示定格");
-  await host.click("text=解除定格，繼續");
   await p.waitForSelector('[data-testid="cell-target"]', { timeout: 20000 });
-  ok(true, "解除後恢復正常畫面");
+  ok(!/定格/.test(await host.textContent("#root")), "定格功能已移除（實體帶場用不到，還會拖慢玩家畫面）");
+  ok(!/定格/.test(await p.textContent("#root")), "皮克敏端也沒有定格畫面");
 
   // 計時器小工具
   await host.click("text=倒數計時器");
