@@ -1,5 +1,5 @@
 /* 主持人端的工具與流程：重整不會換房間、音樂與定格都已移除、
-   倒數計時器小工具、自動隨機會自己換人數。 */
+   倒數計時器小工具、自動隨機會自己換人數、寫入失敗時畫面不裝作成功。 */
 const { makeWorld, hostAdvance, roomCodeOnScreen, joinAs, ok } = require("./harness");
 
 const GAME = process.env.GAME || "/home/user/pikminGame/index.html";
@@ -72,6 +72,24 @@ const attrs = (page) => page.evaluate(() => {
   ok(after.room === before.room, `重整後仍是同一個房間（${before.room}）`);
   ok(after.stage === before.stage, `重整後仍停在同一關（${after.stage}）`);
   ok(roomsAfter.length === roomsBefore.length, `重整沒有多開房間（前 ${roomsBefore.length} 個、後 ${roomsAfter.length} 個）`);
+
+  /* 寫入失敗時畫面不可以裝作成功：伺服器與所有玩家都還停在原地，
+     指揮官卻看到已經重新開始——重整一次就被拉回遊戲中間。 */
+  const solo = await world.device("solo");
+  await solo.click("text=星攻略");
+  await hostAdvance(solo, "開始第一關：皮克敏迫降");
+  await solo.context().setOffline(true);
+  await solo.click("text=重新開始（換活動）");
+  await solo.waitForTimeout(6000);
+  const stuck = await attrs(solo);
+  ok(stuck.stage === "cell", `寫入失敗時畫面退回實際狀態（${stuck.stage}）`);
+  ok(await solo.isVisible('[data-testid="push-failed"]'), "並且明講剛才那個動作沒有送出去");
+  await solo.context().setOffline(false);
+  await solo.waitForTimeout(3000);
+  await solo.click("text=再試一次");
+  await solo.waitForTimeout(5000);
+  ok(await solo.isVisible("text=選擇今天要進行的活動"), "連線恢復後按再試一次就真的重新開始");
+  ok(!(await solo.isVisible('[data-testid="push-failed"]')), "成功之後提示自動消失");
 
   await world.close();
 })().catch((e) => { console.error("測試中止:", e.message); process.exit(1); });
