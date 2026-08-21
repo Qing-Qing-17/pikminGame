@@ -1962,6 +1962,7 @@ function App() {
   const [myGroup, setMyGroup] = useState(null);
   const [editingStory, setEditingStory] = useState(false);
   const [dataRestored, setDataRestored] = useState(false);
+  const [pushFailed, setPushFailed] = useState(null);   // 寫入沒送出去時記下來，讓畫面說實話
   const [timerOpen, setTimerOpen] = useState(false);
   const myIdRef = useRef(loadOrCreateId());
 
@@ -2014,6 +2015,9 @@ function App() {
      所以這裡用 PATCH 只送出流程欄位，永遠不可能蓋到玩家的東西。 */
   const pushState = useCallback(async (next, opts = {}) => {
     if (role === "host") next = { ...next, hostTime: Date.now() };
+    /* 樂觀更新之前先記下原本的樣子。寫入失敗時要退回去——否則指揮官的畫面
+       會顯示已經生效，伺服器與所有玩家卻停在原地，重整一次就被拉回遊戲中間。 */
+    const before = stateRef.current;
     setState(next);
     if (!syncEnabled) return false;
     const session = {
@@ -2045,7 +2049,13 @@ function App() {
     writingRef.current = Math.max(0, writingRef.current - 1);
     settleUntilRef.current = Date.now() + 700;
     setSyncOk(ok);
-    if (ok && role === "host") saveBackup(activeRoom, next);
+    if (ok) {
+      setPushFailed(null);
+      if (role === "host") saveBackup(activeRoom, next);
+    } else {
+      setState(before);
+      setPushFailed({ next, opts, label: opts.label || "剛才那個動作" });
+    }
     return ok;
   }, [role, activeRoom, syncEnabled, enqueueWrite]);
 
@@ -2313,7 +2323,7 @@ function App() {
             )}
             {role === "host" && activity && !editingStory && (
               <button
-                onClick={() => pushState({ ...state, activity: null, stage: "setup", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol, storyPage: 0, setupDone: false, guessers: {} }, { resetPlayerData: true, resetTtol: true })}
+                onClick={() => pushState({ ...state, activity: null, stage: "setup", cardId: null, cardRevealed: false, takenNumbers: {}, timerRunning: false, timerEndsAt: null, ttol: EMPTY_STATE.ttol, storyPage: 0, setupDone: false, guessers: {} }, { resetPlayerData: true, resetTtol: true, label: "重新開始（換活動）" })}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full"
                 style={{ color: COLORS.inkSoft, border: `1px solid ${COLORS.blue}` }}
               >
@@ -2336,6 +2346,25 @@ function App() {
             <span style={{ color: COLORS.red, fontWeight: 700 }}>　·　⚠ 多人連線目前無法使用</span>
           )}
         </div>
+
+        {role === "host" && pushFailed && (
+          <div data-testid="push-failed" className="rounded-xl px-4 py-3 mb-5 text-sm" style={{ background: COLORS.panel, border: `2px solid ${COLORS.red}`, color: COLORS.ink }}>
+            <div className="font-bold mb-1" style={{ color: COLORS.red }}>⚠ 「{pushFailed.label}」沒有送出去</div>
+            <div className="text-xs mb-3" style={{ color: COLORS.inkSoft }}>
+              畫面已經退回實際的狀態——皮克敏那邊也還停在原本的地方。{describeDbError()}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => { const f = pushFailed; setPushFailed(null); pushState(f.next, f.opts); }}
+                className="px-4 py-2 rounded-full text-sm font-bold"
+                style={{ background: COLORS.yellow, color: "#241A14" }}
+              >再試一次</button>
+              <button onClick={() => setPushFailed(null)} className="px-4 py-2 rounded-full text-sm" style={{ border: `1px solid ${COLORS.blue}`, color: COLORS.inkSoft }}>
+                知道了
+              </button>
+            </div>
+          </div>
+        )}
 
         {!activity ? (
           role === "host" ? (
